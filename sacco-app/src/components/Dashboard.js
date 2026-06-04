@@ -106,6 +106,37 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
     .join("")
     .toUpperCase() || "M";
 
+    async function handleDeleteAccount() {
+  const authData = JSON.parse(localStorage.getItem("digiAuth"));
+  if (!authData || !authData.id) {
+    alert("No account found to delete.");
+    return;
+  }
+
+  if (!window.confirm("Are you sure you want to delete your account?")) return;
+
+  try {
+    const response = await fetch(`http://localhost:5000/api/auth/delete/${authData.id}`, {
+      method: "DELETE",
+    });
+    const data = await response.json();
+
+    if (data.error) {
+      alert(data.error);
+      return;
+    }
+
+    alert("Account deleted successfully.");
+    localStorage.removeItem("digiAuth");
+    setIsLoggedIn(false);
+    setActivePage("login");
+  } catch (err) {
+    console.error("Delete failed:", err);
+    alert("Server error. Could not delete account.");
+  }
+}
+
+
   return (
     <div className="app-shell">
       <Sidebar onSelect={setCurrentSection} activeView={currentSection} />
@@ -274,6 +305,16 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
         {currentSection === "assets" && <AssetCategories />}
         {currentSection === "groupmanagers" && <GroupAccountManagers />}
         {currentSection === "loans" && <LoanTypes />}
+
+        <div className="dashboard-actions">
+  <button className="logout-btn" onClick={handleLogout}>
+    Logout
+  </button>
+  <button className="delete-btn" onClick={handleDeleteAccount}>
+    Delete Account
+  </button>
+</div>
+
 
         <button className="logout-btn" onClick={handleLogout}>
           Logout
