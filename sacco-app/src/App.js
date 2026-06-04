@@ -7,7 +7,7 @@ import Dashboard from "./components/Dashboard.js";
 import "./App.css";
 
 function App() {
-  // The page that is currently shown in the app
+  
   const [currentPage, setCurrentPage] = useState("landing");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 

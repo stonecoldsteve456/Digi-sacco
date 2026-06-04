@@ -12,41 +12,62 @@ function Login({ setIsLoggedIn, setActivePage }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   function handleLogin() {
     setErrorMessage("");
+    setIsLoading(true);
 
     const emailValue = email.trim().toLowerCase();
     if (emailValue === "" || password === "") {
       setErrorMessage("Please enter both email and password.");
+      setIsLoading(false);
       return;
     }
 
-    const users = getStoredUsers();
-    const user = users.find((item) => item.email === emailValue);
+    fetch("http://localhost:5000/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: emailValue, password }),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.error) {
+          setErrorMessage(data.error);
+          return;
+        }
 
-    if (!user) {
-      setErrorMessage("No account found with this email.");
-      return;
-    }
+        // Backend validation successful, now get user details from localStorage
+        const users = getStoredUsers();
+        const user = users.find((item) => item.email === emailValue);
 
-    const encodedPassword = window.btoa(password);
-    if (user.passwordHash !== encodedPassword) {
-      setErrorMessage("Password is incorrect. Please try again.");
-      return;
-    }
+        let role = "member";
+        let saccoName = "Digi Sacco";
+        
+        if (user) {
+          role = user.role || "member";
+          saccoName = user.saccoName || "Digi Sacco";
+        }
 
-    const authData = {
-      email: user.email,
-      name: user.name,
-      role: user.role || "member",
-      saccoName: user.saccoName || "Digi Sacco",
-      loggedAt: new Date().toISOString(),
-    };
+        const authData = {
+          email: data.email,
+          name: data.name,
+          role,
+          saccoName,
+          loggedAt: new Date().toISOString(),
+        };
 
-    window.localStorage.setItem("digiAuth", JSON.stringify(authData));
-    setIsLoggedIn(true);
-    setActivePage("dashboard");
+        window.localStorage.setItem("digiAuth", JSON.stringify(authData));
+        setIsLoggedIn(true);
+        setActivePage("dashboard");
+      })
+      .catch((err) => {
+        console.error("Login error:", err);
+        setErrorMessage("Server error. Please try again later.");
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   }
 
   return (
@@ -65,7 +86,9 @@ function Login({ setIsLoggedIn, setActivePage }) {
         onChange={(e) => setPassword(e.target.value)}
       />
       {errorMessage && <p className="form-error">{errorMessage}</p>}
-      <button onClick={handleLogin}>Login</button>
+      <button onClick={handleLogin} disabled={isLoading}>
+        {isLoading ? "Logging in..." : "Login"}
+      </button>
       <p>
         New member? <span onClick={() => setActivePage("register")}>Register here</span>
       </p>

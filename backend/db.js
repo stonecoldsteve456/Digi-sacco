@@ -1,7 +1,6 @@
 const mysql = require("mysql2/promise");
 require("dotenv").config();
 
-// Initial connection pool without database (for database creation)
 const initialPool = mysql.createPool({
   host: process.env.DB_HOST || "localhost",
   user: process.env.DB_USER || "root",
@@ -11,11 +10,11 @@ const initialPool = mysql.createPool({
   queueLimit: 0,
 });
 
-// Main connection pool with database (created after database exists)
+
 let mainPool = null;
 
 async function initializeDatabase() {
-  // Create database first using initial pool
+
   const connection = await initialPool.getConnection();
   try {
     const dbName = process.env.DB_NAME || "digisacco";
@@ -25,7 +24,7 @@ async function initializeDatabase() {
     connection.release();
   }
 
-  // Now create main pool with the database
+  
   const dbName = process.env.DB_NAME || "digisacco";
   mainPool = mysql.createPool({
     host: process.env.DB_HOST || "localhost",
