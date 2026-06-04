@@ -63,13 +63,20 @@ function GroupAccountManagers() {
       .catch((err) => setError("Failed to add manager: " + err.message))
       .finally(() => setLoading(false));
   };
-    async function handleDelete(id) {
+
+async function handleDelete(id) {
   if (!window.confirm("Are you sure you want to delete this manager?")) return;
 
   try {
-    const response = await fetch(`http://localhost:5000/api/group-managers/${id}`, {
+    const response = await fetch(`http://localhost:3007/api/group-managers/${id}`, {
       method: "DELETE",
     });
+
+    if (!response.ok) {
+      alert("Server error. Could not delete manager.");
+      return;
+    }
+
     const data = await response.json();
 
     if (data.error) {
@@ -78,7 +85,7 @@ function GroupAccountManagers() {
     }
 
     alert("Manager deleted successfully.");
-    loadManagers(); // refresh list
+    loadManagers();
   } catch (err) {
     console.error("Delete failed:", err);
     alert("Server error. Could not delete manager.");
