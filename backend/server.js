@@ -260,22 +260,25 @@ app.listen(port, async () => {
 });
 
 
+
 app.delete("/api/group-managers/:id", async (req, res) => {
+  const id = req.params.id;
+
   try {
-    const { id } = req.params;
     const [result] = await pool.execute(
       "DELETE FROM group_account_managers WHERE id = ?",
       [id]
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "Manager not found." });
+      return res.status(404).json({ error: "Manager not found" });
     }
 
-    return res.json({ message: "Manager deleted successfully." });
-  } catch (error) {
-    console.error("Delete error:", error);
-    return res.status(500).json({ error: "Server error during manager deletion." });
+    res.json({ message: "Manager deleted successfully" });
+  } catch (err) {
+    console.error("Delete error:", err);
+    res.status(500).json({ error: "Server error during manager deletion" });
   }
 });
+
 
