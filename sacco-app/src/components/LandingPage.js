@@ -56,15 +56,7 @@ function LandingPage({ setActivePage }) {
         </div>
       </div>
 
-      <div className="roles-demo content-card">
-        <h2>Roles in Digi Sacco</h2>
-        <ul>
-          <li><strong>Chairperson</strong> → Provides leadership, oversees meetings, and ensures cooperative goals are met.</li>
-          <li><strong>Treasurer</strong> → Manages finances, keeps records of deposits, withdrawals, and prepares reports.</li>
-          <li><strong>Secretary</strong> → Handles documentation, meeting minutes, and official communication.</li>
-          <li><strong>Member</strong> → Contributes savings, applies for loans, and participates in decision-making.</li>
-        </ul>
-      </div>
+   
 
       <div className="why">
         <h2>Why use Digi Sacco?</h2>
