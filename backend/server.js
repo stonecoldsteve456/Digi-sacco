@@ -260,11 +260,15 @@ app.listen(port, async () => {
 });
 
 
-
 app.delete("/api/group-managers/:id", async (req, res) => {
   const id = req.params.id;
 
   try {
+    await pool.execute(
+      "UPDATE group_accounts SET manager_id = NULL WHERE manager_id = ?",
+      [id]
+    );
+
     const [result] = await pool.execute(
       "DELETE FROM group_account_managers WHERE id = ?",
       [id]
