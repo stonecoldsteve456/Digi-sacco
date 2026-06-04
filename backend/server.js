@@ -105,7 +105,7 @@ app.post("/api/auth/register", async (req, res) => {
   }
 });
 
-// Create a transaction (deposit or withdrawal)
+
 app.post("/api/transactions", async (req, res) => {
   try {
     const pool = getMainPool();
@@ -126,7 +126,7 @@ app.post("/api/transactions", async (req, res) => {
   }
 });
 
-// Get transactions for a user
+
 app.get("/api/transactions", async (req, res) => {
   try {
     const pool = getMainPool();
@@ -199,7 +199,7 @@ app.get("/api/group-managers", async (req, res) => {
   }
 });
 
-// Add a group account manager
+
 app.post("/api/group-managers", async (req, res) => {
   try {
     const pool = getMainPool();
@@ -223,7 +223,7 @@ app.post("/api/group-managers", async (req, res) => {
 app.get("/api/dashboard/summary", async (req, res) => {
   try {
     const pool = getMainPool();
-    // Sum deposits for current month
+    
     const [depositRows] = await pool.execute(
       `SELECT IFNULL(SUM(amount),0) AS total FROM transactions WHERE type = 'deposit' AND MONTH(created_at)=MONTH(CURRENT_DATE()) AND YEAR(created_at)=YEAR(CURRENT_DATE())`
     );
@@ -231,7 +231,7 @@ app.get("/api/dashboard/summary", async (req, res) => {
       `SELECT IFNULL(SUM(amount),0) AS total FROM transactions WHERE type = 'withdrawal' AND MONTH(created_at)=MONTH(CURRENT_DATE()) AND YEAR(created_at)=YEAR(CURRENT_DATE())`
     );
 
-    // For simplicity, fees and miscellaneous remain static in this example.
+  
     const summary = {
       contributionPayments: parseFloat(depositRows[0].total) || 0,
       feesPayments: 1480.0,
@@ -256,5 +256,23 @@ app.listen(port, async () => {
   } catch (error) {
     console.error("Failed to initialize database:", error);
     process.exit(1);
+  }
+});
+
+
+
+app.delete("/api/auth/delete/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [result] = await pool.execute("DELETE FROM users WHERE id = ?", [id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "User not found." });
+    }
+
+    return res.json({ message: "Account deleted successfully." });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Server error during account deletion." });
   }
 });
