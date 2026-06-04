@@ -106,9 +106,9 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
     .join("")
     .toUpperCase() || "M";
 
-  return (
-    <div className="app-shell">
-      <Sidebar onSelect={setCurrentSection} activeView={currentSection} />
+   return (
+     <div className="app-shell">
+       <Sidebar onSelect={setCurrentSection} activeView={currentSection} userRole={currentUser.role} />
       <main className="main-content">
         <header className="dashboard-header">
           <div>
