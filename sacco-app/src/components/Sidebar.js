@@ -22,28 +22,29 @@ function Sidebar({ onSelect, activeView, userRole }) {
   const [tempOpen, setTempOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState(null);
 
-  // Define role-based access permissions
+
   const rolePermissions = {
-    chairperson: [ // Full access
+    chairperson: [ 
       "summary", "transactions", "membership", "roles", "loans", 
-      "expenses", "income", "assets", "groupmanagers"
+      "expenses", "income", "assets", "groupmanagers",
+      "deposits", "withdrawals", "checkoffs"
     ],
-    treasurer: [ // Financial focus
+    treasurer: [ 
       "summary", "transactions", "loans", 
-      "expenses", "income", "assets", "groupmanagers"
+      "expenses", "income", "assets", "groupmanagers",
+      "deposits", "withdrawals", "checkoffs"
     ],
-    secretary: [ // Administrative focus
+    secretary: [
       "summary", "membership", "roles"
     ],
-    member: [ // Basic access
-      "summary", "transactions" // Only see their own transactions
+    member: [ 
+      "summary", "transactions", "deposits", "withdrawals", "checkoffs", "loans" 
     ]
   };
 
-  // Get allowed views for the current user's role, default to member permissions
+
   const allowedViews = rolePermissions[userRole] || rolePermissions.member;
-  
-  // Helper function to check if a view is accessible
+
   const isViewAccessible = (view) => allowedViews.includes(view);
 
   const toggleMenu = (menu) => {
@@ -51,13 +52,13 @@ function Sidebar({ onSelect, activeView, userRole }) {
   };
 
   const handleSelect = (view) => {
-    // Only allow navigation to accessible views
+    
     if (isViewAccessible(view)) {
       if (!isOpen) setTempOpen(true);
       if (onSelect) onSelect(view);
       setOpenMenu(null);
     }
-    // Optionally, you could show a message or prevent the action silently
+  
   };
 
   const isOpenActual = isOpen || tempOpen;
