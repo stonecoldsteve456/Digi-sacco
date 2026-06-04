@@ -1,0 +1,144 @@
+.manager-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.manager-summary-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  background: #f8fbf8;
+  border: 1px solid #e5ede5;
+}
+
+.manager-summary-card .summary-icon {
+  width: 50px;
+  height: 50px;
+  border-radius: 16px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.manager-summary-card .summary-text p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.manager-summary-card .summary-text strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.45rem;
+  color: var(--text);
+}
+
+.manager-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 0.9fr;
+  gap: 24px;
+}
+
+.manager-card {
+  background: white;
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 14px 35px rgba(33, 72, 38, 0.08);
+}
+
+.manager-card h3 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.manager-card p {
+  color: var(--muted);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.panel-header svg {
+  width: 42px;
+  height: 42px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.panel-header .panel-title {
+  display: grid;
+  gap: 6px;
+}
+
+.panel-header .panel-title span {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.manager-search-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.manager-search {
+  position: relative;
+  width: min(100%, 320px);
+}
+
+.manager-search input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 14px 12px 42px;
+  background: #fbfdf8;
+}
+
+.manager-search svg {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+}
+
+.manager-table-wrapper {
+  overflow-x: auto;
+}
+
+.manager-empty {
+  padding: 28px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.manager-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.manager-actions .small-btn {
+  border-color: var(--accent);
+}
+
+@media (max-width: 1000px) {
+  .manager-grid {
+    grid-template-columns: 1fr;
+  }
+}
