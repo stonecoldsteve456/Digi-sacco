@@ -142,3 +142,26 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+
+.delete-btn {
+  background-color: #e74c3c;   
+  color: #fff;                 
+  border: none;
+  padding: 8px 14px;
+  margin-left: 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s ease;
+}
+
+.delete-btn:hover {
+  background-color: #c0392b;   
+}
+
+.delete-btn:disabled {
+  background-color: #aaa;      
+  cursor: not-allowed;
+}

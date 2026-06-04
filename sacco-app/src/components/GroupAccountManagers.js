@@ -63,6 +63,32 @@ function GroupAccountManagers() {
       .catch((err) => setError("Failed to add manager: " + err.message))
       .finally(() => setLoading(false));
   };
+    async function handleDelete(id) {
+  if (!window.confirm("Are you sure you want to delete this manager?")) return;
+
+  try {
+    const response = await fetch(`http://localhost:5000/api/group-managers/${id}`, {
+      method: "DELETE",
+    });
+    const data = await response.json();
+
+    if (data.error) {
+      alert("Could not delete manager: " + data.error);
+      return;
+    }
+
+    alert("Manager deleted successfully.");
+    loadManagers(); // refresh list
+  } catch (err) {
+    console.error("Delete failed:", err);
+    alert("Server error. Could not delete manager.");
+  }
+}
+
+
+
+
+
 
   return (
     <div className="section-shell">
@@ -180,6 +206,7 @@ function GroupAccountManagers() {
                     <th>Email</th>
                     <th>Phone</th>
                     <th>Status</th>
+                    <th>Actions</th> 
                   </tr>
                 </thead>
                 <tbody>
@@ -197,6 +224,14 @@ function GroupAccountManagers() {
                         <td>{manager.email}</td>
                         <td>{manager.phone || "—"}</td>
                         <td>{manager.status}</td>
+                         <td>
+                           <button
+                             className="delete-btn"
+                             onClick={() => handleDelete(manager.id)}
+                               >
+                              Delete
+                              </button>
+                               </td>
                       </tr>
                     ))
                   )}
