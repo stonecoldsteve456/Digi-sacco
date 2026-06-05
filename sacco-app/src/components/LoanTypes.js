@@ -59,6 +59,7 @@ function LoanTypes() {
   const [notifications, setNotifications] = useState([]);
   const [activeTab, setActiveTab] = useState("apply");
   const [repayments, setRepayments] = useState({});
+  const isChairperson = currentUser.role === "chairperson";
 
   useEffect(() => {
     setFormData((prev) => ({
@@ -97,6 +98,9 @@ function LoanTypes() {
       repayments: [],
       submittedAt: new Date().toLocaleDateString(),
       nextDue: "In 30 days",
+      approvalStatus: "Pending",
+      approvedBy: null,
+      approvedAt: null,
     };
 
     const savedRecord = addLoanApplication(record);
@@ -110,7 +114,7 @@ function LoanTypes() {
     });
   };
 
-  // Load persisted applications on mount
+  
   useEffect(() => {
     const stored = getLoanApplications();
     if (stored && Array.isArray(stored)) {
@@ -166,6 +170,21 @@ function LoanTypes() {
     });
     setRepayments((prev) => ({ ...prev, [loan.id]: "" }));
     addNotification(`Repayment of ${formatKes(paymentAmount)} recorded for ${loan.loanType}.`);
+  };
+
+  const handleApprove = (loan) => {
+    const updatedApplications = applications.map((application) => {
+      if (application.id !== loan.id) return application;
+      return {
+        ...application,
+        approvalStatus: "Approved",
+        approvedBy: currentUser.name,
+        approvedAt: new Date().toISOString(),
+      };
+    });
+    setApplications(updatedApplications);
+    saveLoanApplications(updatedApplications);
+    addNotification(`Loan for ${loan.memberName} approved by ${currentUser.name}.`);
   };
 
   return (
@@ -283,55 +302,67 @@ function LoanTypes() {
               <p>No loan requests have been submitted yet.</p>
             ) : (
               <table className="admin-table">
-                <thead>
-                  <tr>
-                      <th>Loan</th>
-                      <th>Member</th>
-                      <th>Amount</th>
-                      <th>Paid</th>
-                      <th>Balance</th>
-                      <th>Status</th>
-                      <th>Next Due</th>
-                      <th>Repayment</th>
-                  </tr>
-                </thead>
+                 <thead>
+                   <tr>
+                       <th>Loan</th>
+                       <th>Member</th>
+                       <th>Amount</th>
+                       <th>Paid</th>
+                       <th>Balance</th>
+                       <th>Status</th>
+                       <th>Approval</th>
+                       <th>Approved By</th>
+                       <th>Next Due</th>
+                       <th>Repayment</th>
+                   </tr>
+                 </thead>
                 <tbody>
-                  {applications.map((app) => {
-                    const amountPaid = Number(app.amountPaid) || 0;
-                    const balance = Math.max(Number(app.amount) - amountPaid, 0);
+                   {applications.map((app) => {
+                     const amountPaid = Number(app.amountPaid) || 0;
+                     const balance = Math.max(Number(app.amount) - amountPaid, 0);
 
-                    return (
-                      <tr key={app.id}>
-                        <td>{app.loanType}</td>
-                        <td>{app.memberName}</td>
-                        <td>{formatKes(app.amount)}</td>
-                        <td>{formatKes(amountPaid)}</td>
-                        <td>{formatKes(balance)}</td>
-                        <td>{app.status}</td>
-                        <td>{app.nextDue}</td>
-                        <td>
-                          <div className="repayment-control">
-                            <input
-                              type="number"
-                              min="0"
-                              value={repayments[app.id] || ""}
-                              onChange={handleRepaymentChange(app.id)}
-                              placeholder="KES"
-                              disabled={balance === 0}
-                            />
-                            <button
-                              className="small-btn"
-                              type="button"
-                              onClick={() => handleRepayment(app)}
-                              disabled={balance === 0}
-                            >
-                              Pay
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                     return (
+                       <tr key={app.id}>
+                         <td>{app.loanType}</td>
+                         <td>{app.memberName}</td>
+                         <td>{formatKes(app.amount)}</td>
+                         <td>{formatKes(amountPaid)}</td>
+                         <td>{formatKes(balance)}</td>
+                         <td>{app.status}</td>
+                         <td>
+                           {isChairperson && app.approvalStatus === "Pending" ? (
+                             <button className="small-btn" onClick={() => handleApprove(app)}>
+                               Approve
+                             </button>
+                           ) : (
+                             <span>{app.approvalStatus}</span>
+                           )}
+                         </td>
+                         <td>{app.approvedBy || "-"}</td>
+                         <td>{app.nextDue}</td>
+                         <td>
+                           <div className="repayment-control">
+                             <input
+                               type="number"
+                               min="0"
+                               value={repayments[app.id] || ""}
+                               onChange={handleRepaymentChange(app.id)}
+                               placeholder="KES"
+                               disabled={balance === 0}
+                             />
+                             <button
+                               className="small-btn"
+                               type="button"
+                               onClick={() => handleRepayment(app)}
+                               disabled={balance === 0}
+                             >
+                               Pay
+                             </button>
+                           </div>
+                         </td>
+                       </tr>
+                     );
+                   })}
                 </tbody>
               </table>
             )}
