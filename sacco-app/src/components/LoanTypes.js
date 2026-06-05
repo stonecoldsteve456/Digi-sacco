@@ -4,11 +4,9 @@ import {
   addTransaction,
   formatKes,
   getCurrentUser,
-  getLoanApplications,
   saveLoanApplications,
 } from "../utils/financeStore";
 
-// Enhanced loan options with approval limits
 const loanOptions = [
   {
     name: "Personal Loan",
@@ -16,8 +14,6 @@ const loanOptions = [
     repaymentPeriod: "12 months",
     eligibility: "Active member for 6+ months",
     description: "A personal loan for household and individual needs.",
-    maxAmount: 50000, // KES 50,000
-    minApprovalLevel: "teller", // Can be approved by teller
   },
   {
     name: "Business Loan",
@@ -25,8 +21,6 @@ const loanOptions = [
     repaymentPeriod: "18 months",
     eligibility: "Business plan and member savings history",
     description: "A loan to finance business growth or inventory.",
-    maxAmount: 500000, // KES 500,000
-    minApprovalLevel: "chairperson", // Requires chairperson approval
   },
   {
     name: "Emergency Loan",
@@ -34,8 +28,6 @@ const loanOptions = [
     repaymentPeriod: "6 months",
     eligibility: "Immediate personal emergency support.",
     description: "Quick access to funds for urgent needs.",
-    maxAmount: 20000, // KES 20,000
-    minApprovalLevel: "teller",
   },
   {
     name: "Education Loan",
@@ -43,8 +35,6 @@ const loanOptions = [
     repaymentPeriod: "24 months",
     eligibility: "School fees and training support.",
     description: "Support members paying for education and training.",
-    maxAmount: 100000, // KES 100,000
-    minApprovalLevel: "supervisor",
   },
   {
     name: "Development Loan",
@@ -52,8 +42,6 @@ const loanOptions = [
     repaymentPeriod: "20 months",
     eligibility: "Project-based financing for members.",
     description: "Loans for larger development projects.",
-    maxAmount: 1000000, // KES 1,000,000
-    minApprovalLevel: "board", // Requires board approval
   },
 ];
 
@@ -70,21 +58,7 @@ function LoanTypes() {
   const [notifications, setNotifications] = useState([]);
   const [activeTab, setActiveTab] = useState("apply");
   const [repayments, setRepayments] = useState({});
-  const [auditLogs, setAuditLogs] = useState([]);
-  const [showReport, setShowReport] = useState(false);
-  const [reportType, setReportType] = useState("loan-portfolio");
-  
-  // User role hierarchy for approvals
-  const roleHierarchy = {
-    "member": 0,
-    "teller": 1,
-    "supervisor": 2,
-    "chairperson": 3,
-    "board": 4
-  };
-  
-  const userRole = currentUser.role || "member";
-  const userRoleLevel = roleHierarchy[userRole] || 0;
+  const isChairperson = currentUser.role === "chairperson";
 
   useEffect(() => {
     setFormData((prev) => ({
@@ -105,15 +79,14 @@ function LoanTypes() {
   };
 
   const calculateRepaymentSchedule = (principal, annualInterestRate, repaymentPeriodStr) => {
-    // Convert repayment period string to months (e.g., "12 months" -> 12)
+    
     const months = parseInt(repaymentPeriodStr);
     if (isNaN(months) || months <= 0) return [];
 
-    // Convert annual interest rate to monthly
+  
     const monthlyRate = annualInterestRate / 100 / 12;
     
-    // Calculate monthly payment using amortization formula
-    // Payment = P * r * (1 + r)^n / ((1 + r)^n - 1)
+    
     let monthlyPayment;
     if (monthlyRate === 0) {
       monthlyPayment = principal / months;
@@ -129,19 +102,19 @@ function LoanTypes() {
       const principalPayment = monthlyPayment - interestPayment;
       remainingBalance -= principalPayment;
       
-      // Ensure we don't go negative due to rounding
+      
       if (remainingBalance < 0) {
         remainingBalance = 0;
       }
       
-      // Calculate due date (assuming monthly payments starting from next month)
+      
       const dueDate = new Date();
       dueDate.setMonth(dueDate.getMonth() + i);
       
       schedule.push({
         installmentNumber: i,
-        dueDate: dueDate.toISOString().split('T')[0], // YYYY-MM-DD format
-        amountDue: Math.round(monthlyPayment * 100) / 100, // Round to 2 decimal places
+        dueDate: dueDate.toISOString().split('T')[0], 
+        amountDue: Math.round(monthlyPayment * 100) / 100, 
         principalPayment: Math.round(principalPayment * 100) / 100,
         interestPayment: Math.round(interestPayment * 100) / 100,
         remainingBalance: Math.round(remainingBalance * 100) / 100,
@@ -160,7 +133,7 @@ function LoanTypes() {
       return;
     }
 
-    // Calculate repayment schedule based on loan terms
+    
     const repaymentSchedule = calculateRepaymentSchedule(
       Number(formData.amount),
       selectedLoan.interestRate,
@@ -183,7 +156,7 @@ function LoanTypes() {
       approvalStatus: "Pending",
       approvedBy: null,
       approvedAt: null,
-      disbursementStatus: "Pending", // Pending, Disbursed, Cancelled
+      disbursementStatus: "Pending", 
       disbursedAt: null,
       disbursedBy: null,
       repaymentSchedule: repaymentSchedule,
@@ -231,11 +204,11 @@ function LoanTypes() {
 
       const nextPaid = currentPaid + paymentAmount;
       
-      // Update repayment schedule with this payment
+    
       const updatedSchedule = [...(application.repaymentSchedule || [])];
       let remainingPayment = paymentAmount;
       
-      // Apply payment to installments in order (oldest first)
+  
       for (let i = 0; i < updatedSchedule.length && remainingPayment > 0; i++) {
         const installment = updatedSchedule[i];
         if (!installment.paid) {
@@ -269,32 +242,38 @@ function LoanTypes() {
     addNotification(`Repayment of ${formatKes(paymentAmount)} recorded for ${loan.loanType}.`);
   };
 
-  const handleDisburseLoan = (loan) => {
-    const updatedApplications = applications.map((application) => {
-      if (application.id !== loan.id) return application;
-      
-      // Only allow disbursement if approved
-      if (application.approvalStatus !== "Approved") {
-        alert("Loan must be approved before disbursement.");
-        return application;
-      }
-      
-      return {
-        ...application,
-        disbursementStatus: "Disbursed",
-        disbursedAt: new Date().toISOString(),
-        disbursedBy: currentUser.name,
-        // Update nextDue to reflect first payment date if schedule exists
-        nextDue: application.repaymentSchedule && application.repaymentSchedule.length > 0 
-          ? application.repaymentSchedule[0].dueDate 
-          : "In 30 days"
-      };
-    });
-    
-    setApplications(updatedApplications);
-    saveLoanApplications(updatedApplications);
-    addNotification(`Loan for ${loan.memberName} disbursed by ${currentUser.name}.`);
-  };
+    const handleDisburseLoan = (loan) => {
+     const updatedApplications = applications.map((application) => {
+       if (application.id !== loan.id) return application;
+       
+     
+       if (application.approvalStatus !== "Approved") {
+         alert("Loan must be approved before disbursement.");
+         return application;
+       }
+       
+       return {
+         ...application,
+         disbursementStatus: "Disbursed",
+         disbursedAt: new Date().toISOString(),
+         disbursedBy: currentUser.name,
+     
+         nextDue: application.repaymentSchedule && application.repaymentSchedule.length > 0 
+           ? application.repaymentSchedule[0].dueDate 
+           : "In 30 days"
+       };
+     });
+     
+     setApplications(updatedApplications);
+     saveLoanApplications(updatedApplications);
+     addNotification(`Loan for ${loan.memberName} disbursed by ${currentUser.name}.`);
+   };
+
+   const showRepaymentSchedule = (loan) => {
+     const schedule = calculateRepaymentSchedule(loan.amount, loan.interestRate, loan.repaymentPeriod);
+     console.log('Repayment Schedule for', loan.loanType, schedule);
+     alert('Repayment schedule logged to console. Check devtools for details.');
+   };
 
   const handleApprove = (loan) => {
     const updatedApplications = applications.map((application) => {
