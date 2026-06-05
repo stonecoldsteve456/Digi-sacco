@@ -7,31 +7,30 @@ import Dashboard from "./components/Dashboard.js";
 import "./App.css";
 
 function App() {
-  
-  const [currentPage, setCurrentPage] = useState("landing");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [currentPage, setActivePage] = useState("landing");
+    const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  useEffect(() => {
-    const storedAuth = window.localStorage.getItem("digiAuth");
-    if (storedAuth) {
-      setIsLoggedIn(true);
-      setCurrentPage("dashboard");
-    }
-  }, []);
+    useEffect(() => {
+      const storedAuth = window.localStorage.getItem("digiAuth");
+      if (storedAuth) {
+        setIsLoggedIn(true);
+        // Don't automatically redirect to dashboard - let login component handle navigation
+      }
+    }, []);
 
-  return (
-    <>
-      {currentPage === "landing" && <LandingPage setActivePage={setCurrentPage} />}
-      {currentPage === "login" && (
-        <Login setIsLoggedIn={setIsLoggedIn} setActivePage={setCurrentPage} />
-      )}
-      {currentPage === "register" && <Register setActivePage={setCurrentPage} />}
-      {currentPage === "register-setup" && <RegisterSetup setActivePage={setCurrentPage} />}
-      {currentPage === "dashboard" && isLoggedIn && (
-        <Dashboard setIsLoggedIn={setIsLoggedIn} setActivePage={setCurrentPage} />
-      )}
-    </>
-  );
-}
+    return (
+      <>
+        {currentPage === "landing" && <LandingPage setActivePage={setActivePage} />}
+        {currentPage === "login" && (
+          <Login setIsLoggedIn={setIsLoggedIn} setActivePage={setActivePage} />
+        )}
+        {currentPage === "register" && <Register setActivePage={setActivePage} />}
+        {currentPage === "register-setup" && <RegisterSetup setActivePage={setActivePage} />}
+        {currentPage === "dashboard" && isLoggedIn && (
+          <Dashboard setIsLoggedIn={setIsLoggedIn} setActivePage={setActivePage} />
+        )}
+      </>
+    );
+ }
 
-export default App;
+ export default App;
