@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { FiUsers, FiUserCheck, FiList, FiSearch, FiPlusCircle } from "react-icons/fi";
+import { getSessionPayload, withSacco } from "../utils/api";
 import "./GroupAccountManagers.css";
 
 function GroupAccountManagers() {
@@ -22,7 +23,7 @@ function GroupAccountManagers() {
     setLoading(true);
     setError("");
 
-    fetch("http://localhost:5000/api/group-managers")
+    fetch(`http://localhost:5000/api${withSacco("/group-managers")}`)
       .then((r) => r.json())
       .then((data) => {
         setManagers(Array.isArray(data) ? data : []);
@@ -49,7 +50,7 @@ function GroupAccountManagers() {
     fetch("http://localhost:5000/api/group-managers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify(getSessionPayload(form)),
     })
       .then((r) => r.json())
       .then((data) => {
@@ -68,7 +69,7 @@ async function handleDelete(id) {
   if (!window.confirm("Are you sure you want to delete this manager?")) return;
 
   try {
-    const response = await fetch(`http://localhost:3007/api/group-managers/${id}`, {
+    const response = await fetch(`http://localhost:5000/api/group-managers/${id}`, {
       method: "DELETE",
     });
 

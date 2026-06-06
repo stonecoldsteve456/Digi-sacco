@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { addTransaction } from "../utils/financeStore";
+import { addTransaction, saveContributionSettings } from "../utils/financeStore";
 
 const steps = [
   "Sacco Setup",
@@ -46,71 +46,170 @@ function RegisterSetup({ setActivePage }) {
     setCurrentStep((prev) => Math.max(prev - 1, 1));
   };
 
-  const handleComplete = () => {
-    // If the user just registered, post a first contribution transaction to backend
-    const registeredEmail = window.localStorage.getItem("lastRegisteredEmail");
-    if (registeredEmail) {
-      const users = JSON.parse(window.localStorage.getItem("digiUsers") || "[]");
-      const setupByEmail = JSON.parse(window.localStorage.getItem("digiSetupByEmail") || "{}");
-      const role = form.role || "member";
-
-      window.localStorage.setItem(
-        "digiUsers",
-        JSON.stringify(
-          users.map((user) =>
-            user.email === registeredEmail
-              ? { ...user, role, saccoName: form.saccoName || "Digi Sacco" }
-              : user
-          )
-        )
-      );
-      window.localStorage.setItem(
-        "digiSetupByEmail",
-        JSON.stringify({
-          ...setupByEmail,
-          [registeredEmail]: {
-            role,
-            saccoName: form.saccoName || "Digi Sacco",
-          },
-        })
-      );
-
-      if (form.contributionAmount) {
-        addTransaction({
-          userEmail: registeredEmail,
-          memberName: users.find((user) => user.email === registeredEmail)?.name || "Member",
-          type: "deposit",
-          amount: form.contributionAmount,
-          description: form.contributionDescription || "Initial contribution",
-        });
-      }
+  const rememberSacco = (sacco) => {
+    let saccos = [];
+    try {
+      saccos = JSON.parse(window.localStorage.getItem("digiSaccos") || "[]");
+    } catch (error) {
+      saccos = [];
     }
 
-    if (registeredEmail && form.contributionAmount) {
-      fetch("http://localhost:5000/api/transactions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userEmail: registeredEmail,
-          type: "deposit",
-          amount: form.contributionAmount,
-          description: form.contributionDescription || "Initial contribution",
-        }),
-      })
-        .then((r) => r.json())
-        .then((data) => {
-          if (data && data.error) console.log("Transaction error:", data.error);
-        })
-        .catch((err) => console.log("Failed to post transaction:", err))
-        .finally(() => {
-          alert("Setup completed. Welcome to Digi Sacco!");
-          setActivePage("login");
-        });
-    } else {
-      alert("Setup completed. Welcome to Digi Sacco!");
-      setActivePage("login");
-    }
+    const nextSacco = {
+      id: sacco.id,
+      name: sacco.name,
+      contributionAmount: sacco.contributionAmount || form.contributionAmount,
+      contributionFrequency: sacco.contributionFrequency || form.contributionFrequency,
+      contributionDescription:
+        sacco.contributionDescription || form.contributionDescription || "Member contribution",
+    };
+    const nextSaccos = saccos.some((record) => Number(record.id) === Number(nextSacco.id))
+      ? saccos.map((record) => (Number(record.id) === Number(nextSacco.id) ? nextSacco : record))
+      : [nextSacco, ...saccos];
+
+    window.localStorage.setItem("digiSaccos", JSON.stringify(nextSaccos));
   };
+
+   const handleComplete = async () => {
+     let saccoId = null;
+     
+     // First, create the sacco via backend API
+     try {
+       const saccoResponse = await fetch("http://localhost:5000/api/sacco", {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({
+           name: form.saccoName,
+           description: `Sacco created via Digi Sacco setup`,
+           registrationNumber: "",
+           country: form.country,
+           currency: form.currency.split(" ")[0],
+           contributionAmount: form.contributionAmount,
+           contributionFrequency: form.contributionFrequency,
+           contributionDescription: form.contributionDescription || "Member contribution"
+         }),
+       });
+       
+       const saccoData = await saccoResponse.json();
+       if (saccoResponse.ok && saccoData.id) {
+         saccoId = saccoData.id;
+         rememberSacco(saccoData);
+         console.log("Sacco created with ID:", saccoId);
+       } else {
+         throw new Error(saccoData.error || "Failed to create sacco");
+       }
+     } catch (error) {
+       console.error("Error creating sacco:", error);
+       alert("Failed to create sacco: " + error.message);
+       return;
+     }
+
+     // If the user just registered, post a first contribution transaction to backend
+     const registeredEmail = window.localStorage.getItem("lastRegisteredEmail");
+     if (registeredEmail) {
+       const users = JSON.parse(window.localStorage.getItem("digiUsers") || "[]");
+       const setupByEmail = JSON.parse(window.localStorage.getItem("digiSetupByEmail") || "{}");
+       const registeredUser = users.find((user) => user.email === registeredEmail);
+       const role = form.role || registeredUser?.role || "member";
+
+       window.localStorage.setItem(
+         "digiUsers",
+         JSON.stringify(
+           users.map((user) =>
+             user.email === registeredEmail
+               ? { ...user, role, saccoName: form.saccoName || "Digi Sacco", saccoId: saccoId }
+               : user
+           )
+         )
+       );
+       window.localStorage.setItem(
+         "digiSetupByEmail",
+         JSON.stringify({
+           ...setupByEmail,
+           [registeredEmail]: {
+             role,
+             saccoName: form.saccoName || "Digi Sacco",
+             saccoId: saccoId
+           },
+         })
+       );
+
+       if (saccoId) {
+         window.localStorage.setItem("digiCurrentSaccoId", saccoId.toString());
+         window.dispatchEvent(new Event("digi-sacco-updated"));
+         saveContributionSettings({
+           saccoId,
+           contributionAmount: form.contributionAmount,
+           contributionFrequency: form.contributionFrequency,
+           contributionDescription: form.contributionDescription || "Member contribution",
+         });
+       }
+
+       // Add transaction to local finance store (will include saccoId)
+       if (form.contributionAmount) {
+         addTransaction({
+           userEmail: registeredEmail,
+           memberName: registeredUser?.name || "Member",
+           type: "deposit",
+           amount: form.contributionAmount,
+           description: form.contributionDescription || "Initial contribution",
+         });
+       }
+
+       // Also update user's sacco association in backend
+       try {
+         await fetch("http://localhost:5000/api/users/sacco", {
+           method: "PUT",
+           headers: { "Content-Type": "application/json" },
+           body: JSON.stringify({
+             email: registeredEmail,
+             saccoId: saccoId
+           }),
+         });
+       } catch (backendError) {
+         console.error("Error updating user sacco in backend:", backendError);
+         // Continue anyway since we have local storage updated
+       }
+     }
+
+     // Store current sacco ID in local storage for finance filtering
+     if (saccoId) {
+       window.localStorage.setItem("digiCurrentSaccoId", saccoId.toString());
+       window.dispatchEvent(new Event("digi-sacco-updated"));
+       saveContributionSettings({
+         saccoId,
+         contributionAmount: form.contributionAmount,
+         contributionFrequency: form.contributionFrequency,
+         contributionDescription: form.contributionDescription || "Member contribution",
+       });
+     }
+
+     if (registeredEmail && form.contributionAmount) {
+       // Post initial contribution transaction to backend (will include saccoId)
+       fetch("http://localhost:5000/api/transactions", {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({
+           userEmail: registeredEmail,
+           type: "deposit",
+           amount: form.contributionAmount,
+           description: form.contributionDescription || "Initial contribution",
+           saccoId: saccoId
+         }),
+       })
+         .then((r) => r.json())
+         .then((data) => {
+           if (data && data.error) console.log("Transaction error:", data.error);
+         })
+         .catch((err) => console.log("Failed to post transaction:", err))
+         .finally(() => {
+           alert("Setup completed. Welcome to Digi Sacco!");
+           setActivePage("login");
+         });
+     } else {
+       alert("Setup completed. Welcome to Digi Sacco!");
+       setActivePage("login");
+     }
+   };
 
   const renderStepContent = () => {
     switch (currentStep) {

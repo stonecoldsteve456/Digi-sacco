@@ -244,12 +244,14 @@ button.primary:hover {
 }
 
 .login input,
-.register input {
+.register input,
+.register select {
   width: 100%;
   border: 1px solid #d8e2dc;
   border-radius: 14px;
   padding: 14px 16px;
   margin-bottom: 16px;
+  background: white;
 }
 
 .login button,
@@ -265,6 +267,12 @@ button.primary:hover {
 .login button:hover,
 .register button:hover {
   background: #1c4e28;
+}
+
+.form-success {
+  color: #1f7a3d;
+  font-weight: 700;
+  margin: -4px 0 14px;
 }
 
 @media (max-width: 900px) {
@@ -1257,6 +1265,19 @@ button.secondary {
   gap: 10px;
 }
 
+.clickable-card {
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.clickable-card:hover,
+.clickable-card:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 16px 36px rgba(31, 47, 39, 0.12);
+  outline: none;
+  transform: translateY(-1px);
+}
+
 .summary-card:nth-child(2) .card-icon {
   background: var(--sky);
   color: #27739a;
@@ -1537,7 +1558,7 @@ body {
 }
 
 .deposit-summary {
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
 }
 
@@ -1570,6 +1591,11 @@ body {
 
 .transaction-form-panel button.primary {
   min-height: 48px;
+}
+
+.muted-copy {
+  color: var(--muted);
+  margin: 6px 0;
 }
 
 .repayment-control {

@@ -1,5 +1,18 @@
 const TRANSACTIONS_KEY = "digiTransactions";
 const LOANS_KEY = "loanApplications";
+const SACCO_ID_KEY = "digiCurrentSaccoId";
+const CONTRIBUTION_SETTINGS_KEY = "digiContributionSettings";
+
+const CONTRIBUTION_TYPES = ["deposit", "checkoff"];
+
+function readList(key) {
+  try {
+    const records = JSON.parse(window.localStorage.getItem(key) || "[]");
+    return Array.isArray(records) ? records : [];
+  } catch (error) {
+    return [];
+  }
+}
 
 export function getCurrentUser() {
   try {
@@ -9,13 +22,68 @@ export function getCurrentUser() {
   }
 }
 
-export function getTransactions() {
+export function getCurrentSaccoId() {
   try {
-    const records = JSON.parse(window.localStorage.getItem(TRANSACTIONS_KEY) || "[]");
-    return Array.isArray(records) ? records : [];
+    return parseInt(window.localStorage.getItem(SACCO_ID_KEY) || "0", 10);
   } catch (error) {
-    return [];
+    return 0;
   }
+}
+
+export function setCurrentSaccoId(saccoId) {
+  if (saccoId) {
+    window.localStorage.setItem(SACCO_ID_KEY, saccoId.toString());
+  } else {
+    window.localStorage.removeItem(SACCO_ID_KEY);
+  }
+  window.dispatchEvent(new Event("digi-sacco-updated"));
+}
+
+export function getContributionSettings() {
+  const settings = readList(CONTRIBUTION_SETTINGS_KEY);
+  const saccoId = getCurrentSaccoId();
+  return (
+    settings.find((record) => Number(record.saccoId) === saccoId) || {
+      saccoId,
+      contributionAmount: 0,
+      contributionFrequency: "Monthly",
+      contributionDescription: "",
+    }
+  );
+}
+
+export function saveContributionSettings(settings) {
+  const saccoId = Number(settings.saccoId) || getCurrentSaccoId();
+  const records = readList(CONTRIBUTION_SETTINGS_KEY);
+  const nextRecord = {
+    saccoId,
+    contributionAmount: Number(settings.contributionAmount) || 0,
+    contributionFrequency: settings.contributionFrequency || "Monthly",
+    contributionDescription: settings.contributionDescription || "",
+  };
+  const nextRecords = records.some((record) => Number(record.saccoId) === saccoId)
+    ? records.map((record) => (Number(record.saccoId) === saccoId ? nextRecord : record))
+    : [nextRecord, ...records];
+
+  window.localStorage.setItem(CONTRIBUTION_SETTINGS_KEY, JSON.stringify(nextRecords));
+  window.dispatchEvent(new Event("digi-finance-updated"));
+  return nextRecord;
+}
+
+export function getTransactions() {
+  const records = readList(TRANSACTIONS_KEY);
+  const saccoId = getCurrentSaccoId();
+
+  if (saccoId > 0) {
+    return records.filter((record) => Number(record.saccoId) === saccoId);
+  }
+
+  const user = getCurrentUser();
+  if (user.email) {
+    return records.filter((record) => record.userEmail === user.email);
+  }
+
+  return [];
 }
 
 export function saveTransactions(records) {
@@ -25,28 +93,40 @@ export function saveTransactions(records) {
 
 export function addTransaction(record) {
   const user = getCurrentUser();
-  const transactions = getTransactions();
+  const saccoId = getCurrentSaccoId();
+  const settings = getContributionSettings();
+  const fixedContributionAmount = Number(settings.contributionAmount) || 0;
+  const shouldUseFixedContribution = CONTRIBUTION_TYPES.includes(record.type) && fixedContributionAmount > 0;
   const nextRecord = {
     id: Date.now(),
     memberName: record.memberName || user.name || "Member",
     userEmail: record.userEmail || user.email || "",
+    saccoId: record.saccoId || saccoId || null,
     type: record.type,
-    amount: Number(record.amount) || 0,
-    description: record.description || "",
+    amount: shouldUseFixedContribution ? fixedContributionAmount : Number(record.amount) || 0,
+    description:
+      record.description || (shouldUseFixedContribution ? settings.contributionDescription : "") || "",
     createdAt: new Date().toISOString(),
   };
 
-  saveTransactions([nextRecord, ...transactions]);
+  saveTransactions([nextRecord, ...readList(TRANSACTIONS_KEY)]);
   return nextRecord;
 }
 
 export function getLoanApplications() {
-  try {
-    const records = JSON.parse(window.localStorage.getItem(LOANS_KEY) || "[]");
-    return Array.isArray(records) ? records : [];
-  } catch (error) {
-    return [];
+  const records = readList(LOANS_KEY);
+  const saccoId = getCurrentSaccoId();
+
+  if (saccoId > 0) {
+    return records.filter((record) => Number(record.saccoId) === saccoId);
   }
+
+  const user = getCurrentUser();
+  if (user.email) {
+    return records.filter((record) => record.userEmail === user.email);
+  }
+
+  return [];
 }
 
 export function saveLoanApplications(records) {
@@ -55,24 +135,29 @@ export function saveLoanApplications(records) {
 }
 
 export function addLoanApplication(record) {
-  const loans = getLoanApplications();
+  const saccoId = getCurrentSaccoId();
   const nextRecord = {
     ...record,
+    saccoId: record.saccoId || saccoId || null,
     amount: Number(record.amount) || 0,
   };
 
-  saveLoanApplications([nextRecord, ...loans]);
+  saveLoanApplications([nextRecord, ...readList(LOANS_KEY)]);
   return nextRecord;
 }
 
 export function getFinanceSummary() {
-  const transactions = getTransactions();
-  const loans = getLoanApplications();
-  const users = JSON.parse(window.localStorage.getItem("digiUsers") || "[]");
+  const transactions = getTransactions(); 
+  const loans = getLoanApplications();   
+  const users = readList("digiUsers");
+  const saccoId = getCurrentSaccoId();
   const memberNames = new Set();
+  const settings = getContributionSettings();
 
   users.forEach((user) => {
-    if (user.name) memberNames.add(user.name.trim().toLowerCase());
+    if ((!saccoId || Number(user.saccoId) === saccoId) && user.name) {
+      memberNames.add(user.name.trim().toLowerCase());
+    }
   });
   transactions.forEach((transaction) => {
     if (transaction.memberName) memberNames.add(transaction.memberName.trim().toLowerCase());
@@ -93,11 +178,15 @@ export function getFinanceSummary() {
 
       if (transaction.type === "deposit") {
         summary.contributionPayments += amount;
+        summary.pooledFund += amount;
+        if (transaction.userEmail === getCurrentUser().email) summary.personalContributions += amount;
       }
 
       if (transaction.type === "checkoff") {
         summary.checkoffPayments += amount;
         summary.contributionPayments += amount;
+        summary.pooledFund += amount;
+        if (transaction.userEmail === getCurrentUser().email) summary.personalContributions += amount;
       }
 
       if (transaction.type === "withdrawal") {
@@ -119,6 +208,11 @@ export function getFinanceSummary() {
       loanApplications: loans.length,
       loansApplied,
       remainingLoanDebt: Math.max(loansApplied - loanRepaymentsFromLoans, 0),
+      pooledFund: 0,
+      personalContributions: 0,
+      fixedContributionAmount: Number(settings.contributionAmount) || 0,
+      contributionFrequency: settings.contributionFrequency || "Monthly",
+      contributionDescription: settings.contributionDescription || "",
     }
   );
 }

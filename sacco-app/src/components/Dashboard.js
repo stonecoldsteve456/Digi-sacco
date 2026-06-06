@@ -10,6 +10,7 @@ import {
   FiUser,
 } from "react-icons/fi";
 import { formatKes, getFinanceSummary } from "../utils/financeStore";
+import { apiRequest, withSacco } from "../utils/api";
 import Sidebar from "./Sidebar";
 import SearchBar from "./SearchBar";
 import DepositSummary from "./DepositSummary";
@@ -46,9 +47,17 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
     loanApplications: 0,
     activeMembers: 0,
     pendingApprovals: 0,
+    pooledFund: 0,
+    personalContributions: 0,
+    fixedContributionAmount: 0,
+    contributionFrequency: "Monthly",
   });
 
   const handleLogout = () => {
+    window.localStorage.removeItem("digiAuth");
+    window.localStorage.removeItem("digiCurrentSaccoId");
+    window.dispatchEvent(new Event("digi-finance-updated"));
+    window.dispatchEvent(new Event("digi-sacco-updated"));
     setIsLoggedIn(false);
     setActivePage("landing");
   };
@@ -78,13 +87,20 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
     refreshFinanceSummary();
     window.addEventListener("digi-finance-updated", refreshFinanceSummary);
 
-    fetch("http://localhost:5000/api/dashboard/summary")
-      .then((response) => response.json())
+    const authEmail = (() => {
+      try {
+        return JSON.parse(window.localStorage.getItem("digiAuth") || "{}").email || "";
+      } catch (error) {
+        return "";
+      }
+    })();
+
+    apiRequest(withSacco(`/dashboard/summary?email=${encodeURIComponent(authEmail)}`))
       .then((data) => {
         if (data) {
           setSummary((prev) => ({
             ...prev,
-            pendingApprovals: data.pendingApprovals || prev.pendingApprovals,
+            ...data,
           }));
         }
       })
@@ -168,12 +184,50 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
                   <div className="card-icon">
                     <FiPieChart />
                   </div>
+                  <span>Pooled Sacco Fund</span>
+                </div>
+                <strong>{formatKes(summary.pooledFund)}</strong>
+                <p>All member contributions aggregated</p>
+              </article>
+              <article className="summary-card">
+                <div className="card-meta">
+                  <div className="card-icon">
+                    <FiUser />
+                  </div>
+                  <span>My Contributions</span>
+                </div>
+                <strong>{formatKes(summary.personalContributions)}</strong>
+                <p>Personal contribution record</p>
+              </article>
+              <article className="summary-card">
+                <div className="card-meta">
+                  <div className="card-icon">
+                    <FiCreditCard />
+                  </div>
+                  <span>Fixed Contribution</span>
+                </div>
+                <strong>{formatKes(summary.fixedContributionAmount)}</strong>
+                <p>{summary.contributionFrequency} for every role</p>
+              </article>
+              <article className="summary-card">
+                <div className="card-meta">
+                  <div className="card-icon">
+                    <FiPieChart />
+                  </div>
                   <span>Checkoff Payments</span>
                 </div>
                 <strong>{formatKes(summary.checkoffPayments)}</strong>
                 <p>Payroll deductions recorded</p>
               </article>
-              <article className="summary-card">
+              <article
+                className="summary-card clickable-card"
+                role="button"
+                tabIndex="0"
+                onClick={() => setCurrentSection("loans")}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") setCurrentSection("loans");
+                }}
+              >
                 <div className="card-meta">
                   <div className="card-icon">
                     <FiTrendingUp />
@@ -242,10 +296,18 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
                   </div>
                   <strong>{summary.activeMembers.toLocaleString()}</strong>
                 </div>
-                <div className="small-card">
+                <div
+                  className="small-card clickable-card"
+                  role="button"
+                  tabIndex="0"
+                  onClick={() => setCurrentSection("loans")}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") setCurrentSection("loans");
+                  }}
+                >
                   <div className="small-card-heading">
                     <FiBell />
-                    <span>Pending Approvals</span>
+                    <span>{currentUser.role === "chairperson" ? "Pending Loan Approvals" : "Pending Approvals"}</span>
                   </div>
                   <strong>{summary.pendingApprovals.toLocaleString()}</strong>
                 </div>

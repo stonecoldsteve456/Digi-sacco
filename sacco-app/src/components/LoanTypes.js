@@ -3,11 +3,14 @@ import {
   addLoanApplication,
   addTransaction,
   formatKes,
+  getCurrentSaccoId,
   getCurrentUser,
+  getLoanApplications,
   saveLoanApplications,
 } from "../utils/financeStore";
+import { apiRequest, getSessionPayload, withSacco } from "../utils/api";
 
-const loanOptions = [
+const defaultLoanOptions = [
   {
     name: "Personal Loan",
     interestRate: 12,
@@ -47,6 +50,7 @@ const loanOptions = [
 
 function LoanTypes() {
   const currentUser = getCurrentUser();
+  const [loanOptions, setLoanOptions] = useState(defaultLoanOptions);
   const [selectedLoan, setSelectedLoan] = useState(loanOptions[0]);
   const [formData, setFormData] = useState({
     memberName: currentUser.name || "",
@@ -56,9 +60,34 @@ function LoanTypes() {
   });
   const [applications, setApplications] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [activeTab, setActiveTab] = useState("apply");
   const [repayments, setRepayments] = useState({});
   const isChairperson = currentUser.role === "chairperson";
+  const [activeTab, setActiveTab] = useState(isChairperson ? "my-loans" : "apply");
+
+  useEffect(() => {
+    apiRequest(withSacco("/loan-types"))
+      .then((data) => {
+        const nextOptions = Array.isArray(data) && data.length ? data : defaultLoanOptions;
+        setLoanOptions(nextOptions);
+        setSelectedLoan((current) => nextOptions.find((loan) => loan.name === current?.name) || nextOptions[0]);
+      })
+      .catch(() => {});
+
+    const applicationsPath = isChairperson
+      ? withSacco("/loan-applications")
+      : withSacco(`/loan-applications?email=${encodeURIComponent(currentUser.email || "")}`);
+
+    apiRequest(applicationsPath)
+      .then((data) => setApplications(Array.isArray(data) ? data : []))
+      .catch(() => setApplications(getLoanApplications()));
+  }, [currentUser.email, isChairperson]);
+
+  const persistLoan = (loan) => {
+    return apiRequest(`/loan-applications/${loan.id}`, {
+      method: "PUT",
+      body: JSON.stringify(loan),
+    });
+  };
 
   useEffect(() => {
     setFormData((prev) => ({
@@ -79,42 +108,37 @@ function LoanTypes() {
   };
 
   const calculateRepaymentSchedule = (principal, annualInterestRate, repaymentPeriodStr) => {
-    
     const months = parseInt(repaymentPeriodStr);
     if (isNaN(months) || months <= 0) return [];
 
-  
     const monthlyRate = annualInterestRate / 100 / 12;
-    
-    
+
     let monthlyPayment;
     if (monthlyRate === 0) {
       monthlyPayment = principal / months;
     } else {
       monthlyPayment = principal * monthlyRate * Math.pow(1 + monthlyRate, months) / (Math.pow(1 + monthlyRate, months) - 1);
     }
-    
+
     const schedule = [];
     let remainingBalance = principal;
-    
+
     for (let i = 1; i <= months; i++) {
       const interestPayment = remainingBalance * monthlyRate;
       const principalPayment = monthlyPayment - interestPayment;
       remainingBalance -= principalPayment;
-      
-      
+
       if (remainingBalance < 0) {
         remainingBalance = 0;
       }
-      
-      
+
       const dueDate = new Date();
       dueDate.setMonth(dueDate.getMonth() + i);
-      
+
       schedule.push({
         installmentNumber: i,
-        dueDate: dueDate.toISOString().split('T')[0], 
-        amountDue: Math.round(monthlyPayment * 100) / 100, 
+        dueDate: dueDate.toISOString().split('T')[0],
+        amountDue: Math.round(monthlyPayment * 100) / 100,
         principalPayment: Math.round(principalPayment * 100) / 100,
         interestPayment: Math.round(interestPayment * 100) / 100,
         remainingBalance: Math.round(remainingBalance * 100) / 100,
@@ -123,7 +147,7 @@ function LoanTypes() {
         paymentAmount: 0
       });
     }
-    
+
     return schedule;
   };
 
@@ -133,15 +157,16 @@ function LoanTypes() {
       return;
     }
 
-    
     const repaymentSchedule = calculateRepaymentSchedule(
       Number(formData.amount),
       selectedLoan.interestRate,
       selectedLoan.repaymentPeriod
     );
-    
+
     const record = {
       id: Date.now(),
+      saccoId: getCurrentSaccoId() || null,
+      userEmail: currentUser.email || "",
       loanType: selectedLoan.name,
       memberName: formData.memberName,
       amount: Number(formData.amount),
@@ -156,7 +181,7 @@ function LoanTypes() {
       approvalStatus: "Pending",
       approvedBy: null,
       approvedAt: null,
-      disbursementStatus: "Pending", 
+      disbursementStatus: "Pending",
       disbursedAt: null,
       disbursedBy: null,
       repaymentSchedule: repaymentSchedule,
@@ -165,6 +190,10 @@ function LoanTypes() {
 
     const savedRecord = addLoanApplication(record);
     setApplications((prev) => [savedRecord, ...prev]);
+    apiRequest("/loan-applications", {
+      method: "POST",
+      body: JSON.stringify(savedRecord),
+    }).catch((err) => addNotification("Live loan save failed: " + err.message));
     addNotification(`Loan request for ${selectedLoan.name} submitted.`);
     setFormData({
       memberName: currentUser.name || "",
@@ -172,11 +201,11 @@ function LoanTypes() {
       purpose: "",
       repaymentPeriod: selectedLoan.repaymentPeriod,
     });
-   };
- 
-   const handleRepaymentChange = (loanId) => (event) => {
-     setRepayments((prev) => ({ ...prev, [loanId]: event.target.value }));
-   };
+  };
+
+  const handleRepaymentChange = (loanId) => (event) => {
+    setRepayments((prev) => ({ ...prev, [loanId]: event.target.value }));
+  };
 
   const handleRepayment = (loan) => {
     const paymentAmount = Number(repayments[loan.id]) || 0;
@@ -203,12 +232,10 @@ function LoanTypes() {
       if (application.id !== loan.id) return application;
 
       const nextPaid = currentPaid + paymentAmount;
-      
-    
+
       const updatedSchedule = [...(application.repaymentSchedule || [])];
       let remainingPayment = paymentAmount;
-      
-  
+
       for (let i = 0; i < updatedSchedule.length && remainingPayment > 0; i++) {
         const installment = updatedSchedule[i];
         if (!installment.paid) {
@@ -219,7 +246,7 @@ function LoanTypes() {
           remainingPayment -= amountToApply;
         }
       }
-      
+
       return {
         ...application,
         amountPaid: nextPaid,
@@ -232,50 +259,72 @@ function LoanTypes() {
 
     setApplications(updatedApplications);
     saveLoanApplications(updatedApplications);
+    const updatedLoan = updatedApplications.find((application) => application.id === loan.id);
+    if (updatedLoan) persistLoan(updatedLoan);
     addTransaction({
       type: "loan-repayment",
       memberName: loan.memberName,
       amount: paymentAmount,
       description: `${loan.loanType} repayment`,
     });
+    apiRequest("/transactions", {
+      method: "POST",
+      body: JSON.stringify(
+        getSessionPayload({
+          type: "loan-repayment",
+          memberName: loan.memberName,
+          amount: paymentAmount,
+          description: `${loan.loanType} repayment`,
+        })
+      ),
+    }).catch(() => {});
     setRepayments((prev) => ({ ...prev, [loan.id]: "" }));
     addNotification(`Repayment of ${formatKes(paymentAmount)} recorded for ${loan.loanType}.`);
   };
 
-    const handleDisburseLoan = (loan) => {
-     const updatedApplications = applications.map((application) => {
-       if (application.id !== loan.id) return application;
-       
-     
-       if (application.approvalStatus !== "Approved") {
-         alert("Loan must be approved before disbursement.");
-         return application;
-       }
-       
-       return {
-         ...application,
-         disbursementStatus: "Disbursed",
-         disbursedAt: new Date().toISOString(),
-         disbursedBy: currentUser.name,
-     
-         nextDue: application.repaymentSchedule && application.repaymentSchedule.length > 0 
-           ? application.repaymentSchedule[0].dueDate 
-           : "In 30 days"
-       };
-     });
-     
-     setApplications(updatedApplications);
-     saveLoanApplications(updatedApplications);
-     addNotification(`Loan for ${loan.memberName} disbursed by ${currentUser.name}.`);
-   };
+  const handleDisburseLoan = async (loan) => {
+    const updatedApplications = applications.map((application) => {
+      if (application.id !== loan.id) return application;
 
-   const showRepaymentSchedule = (loan) => {
-     const schedule = calculateRepaymentSchedule(loan.amount, loan.interestRate, loan.repaymentPeriod);
-     console.log('Repayment Schedule for', loan.loanType, schedule);
-     alert('Repayment schedule logged to console. Check devtools for details.');
-   };
+      if (application.approvalStatus !== "Approved") {
+        alert("Loan must be approved before disbursement.");
+        return application;
+      }
 
-  const handleApprove = (loan) => {
+      return {
+        ...application,
+        disbursementStatus: "Disbursed",
+        disbursedAt: new Date().toISOString(),
+        disbursedBy: currentUser.name,
+        status: "Disbursed",
+        nextDue: application.repaymentSchedule && application.repaymentSchedule.length > 0
+          ? application.repaymentSchedule[0].dueDate
+          : "In 30 days"
+      };
+    });
+
+    const updatedLoan = updatedApplications.find((application) => application.id === loan.id);
+    if (updatedLoan) {
+      try {
+        await persistLoan(updatedLoan);
+      } catch (err) {
+        addNotification("Could not disburse loan: " + err.message);
+        return;
+      }
+    }
+
+    setApplications(updatedApplications);
+    saveLoanApplications(updatedApplications);
+    addNotification(`Loan for ${loan.memberName} disbursed by ${currentUser.name}.`);
+  };
+
+  const showRepaymentSchedule = (loan) => {
+    const schedule = calculateRepaymentSchedule(loan.amount, loan.interestRate, loan.repaymentPeriod);
+    console.log('Repayment Schedule for', loan.loanType, schedule);
+    alert('Repayment schedule logged to console. Check devtools for details.');
+  };
+
+  const handleApprove = async (loan) => {
     const updatedApplications = applications.map((application) => {
       if (application.id !== loan.id) return application;
       return {
@@ -283,8 +332,20 @@ function LoanTypes() {
         approvalStatus: "Approved",
         approvedBy: currentUser.name,
         approvedAt: new Date().toISOString(),
+        status: "Approved",
       };
     });
+
+    const updatedLoan = updatedApplications.find((application) => application.id === loan.id);
+    if (updatedLoan) {
+      try {
+        await persistLoan(updatedLoan);
+      } catch (err) {
+        addNotification("Could not approve loan: " + err.message);
+        return;
+      }
+    }
+
     setApplications(updatedApplications);
     saveLoanApplications(updatedApplications);
     addNotification(`Loan for ${loan.memberName} approved by ${currentUser.name}.`);
@@ -308,7 +369,7 @@ function LoanTypes() {
             className={activeTab === "my-loans" ? "loan-tab active" : "loan-tab"}
             onClick={() => setActiveTab("my-loans")}
           >
-            My Loans
+            {isChairperson ? "Loan Approvals" : "My Loans"}
           </button>
         </div>
         <div className="loan-type-list">
@@ -400,93 +461,97 @@ function LoanTypes() {
       ) : (
         <section className="loan-grid">
           <div className="loan-tracking-card full-width">
-            <h3>My Loans</h3>
+            <h3>{isChairperson ? "Loan Applications" : "My Loans"}</h3>
             {applications.length === 0 ? (
-              <p>No loan requests have been submitted yet.</p>
+              <p>
+                {isChairperson
+                  ? "No member loan requests have been submitted yet."
+                  : "No loan requests have been submitted yet."}
+              </p>
             ) : (
               <table className="admin-table">
-                 <thead>
-                   <tr>
-                       <th>Loan</th>
-                       <th>Member</th>
-                       <th>Amount</th>
-                       <th>Paid</th>
-                       <th>Balance</th>
-                       <th>Status</th>
-                       <th>Approval</th>
-                       <th>Disbursement</th>
-                       <th>Approved By</th>
-                       <th>Next Due</th>
-                       <th>Repayment</th>
-                       <th>Actions</th>
-                   </tr>
-                 </thead>
+                <thead>
+                  <tr>
+                    <th>Loan</th>
+                    <th>Member</th>
+                    <th>Amount</th>
+                    <th>Paid</th>
+                    <th>Balance</th>
+                    <th>Status</th>
+                    <th>Approval</th>
+                    <th>Disbursement</th>
+                    <th>Approved By</th>
+                    <th>Next Due</th>
+                    <th>Repayment</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
                 <tbody>
-                    {applications.map((app) => {
-                      const amountPaid = Number(app.amountPaid) || 0;
-                      const balance = Math.max(Number(app.amount) - amountPaid, 0);
+                  {applications.map((app) => {
+                    const amountPaid = Number(app.amountPaid) || 0;
+                    const balance = Math.max(Number(app.amount) - amountPaid, 0);
 
-                      return (
-                        <tr key={app.id}>
-                          <td>{app.loanType}</td>
-                          <td>{app.memberName}</td>
-                          <td>{formatKes(app.amount)}</td>
-                          <td>{formatKes(amountPaid)}</td>
-                          <td>{formatKes(balance)}</td>
-                          <td>{app.status}</td>
-                          <td>
-                            {isChairperson && app.approvalStatus === "Pending" ? (
-                              <button className="small-btn" onClick={() => handleApprove(app)}>
-                                Approve
-                              </button>
-                            ) : (
-                              <span>{app.approvalStatus}</span>
-                            )}
-                          </td>
-                          <td>
-                            {isChairperson && app.approvalStatus === "Approved" && app.disbursementStatus === "Pending" ? (
-                              <button className="small-btn" onClick={() => handleDisburseLoan(app)}>
-                                Disburse
-                              </button>
-                            ) : (
-                              <span>{app.disbursementStatus}</span>
-                            )}
-                          </td>
-                          <td>{app.approvedBy || "-"}</td>
-                          <td>{app.nextDue}</td>
-                          <td>
-                            <div className="repayment-control">
-                              <input
-                                type="number"
-                                min="0"
-                                value={repayments[app.id] || ""}
-                                onChange={handleRepaymentChange(app.id)}
-                                placeholder="KES"
-                                disabled={balance === 0}
-                              />
-                              <button
-                                className="small-btn"
-                                type="button"
-                                onClick={() => handleRepayment(app)}
-                                disabled={balance === 0}
-                              >
-                                Pay
-                              </button>
-                            </div>
-                          </td>
-                          <td>
-                            {isChairperson && app.approvalStatus === "Approved" && app.repaymentSchedule ? (
-                              <button 
-                                className="small-btn" 
-                                onClick={() => showRepaymentSchedule(app)}
-                              >
-                                Schedule
-                              </button>
-                            ) : null}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    return (
+                      <tr key={app.id}>
+                        <td>{app.loanType}</td>
+                        <td>{app.memberName}</td>
+                        <td>{formatKes(app.amount)}</td>
+                        <td>{formatKes(amountPaid)}</td>
+                        <td>{formatKes(balance)}</td>
+                        <td>{app.status}</td>
+                        <td>
+                          {isChairperson && app.approvalStatus === "Pending" ? (
+                            <button className="small-btn" onClick={() => handleApprove(app)}>
+                              Approve
+                            </button>
+                          ) : (
+                            <span>{app.approvalStatus}</span>
+                          )}
+                        </td>
+                        <td>
+                          {isChairperson && app.approvalStatus === "Approved" && app.disbursementStatus === "Pending" ? (
+                            <button className="small-btn" onClick={() => handleDisburseLoan(app)}>
+                              Disburse
+                            </button>
+                          ) : (
+                            <span>{app.disbursementStatus}</span>
+                          )}
+                        </td>
+                        <td>{app.approvedBy || "-"}</td>
+                        <td>{app.nextDue}</td>
+                        <td>
+                          <div className="repayment-control">
+                            <input
+                              type="number"
+                              min="0"
+                              value={repayments[app.id] || ""}
+                              onChange={handleRepaymentChange(app.id)}
+                              placeholder="KES"
+                              disabled={balance === 0}
+                            />
+                            <button
+                              className="small-btn"
+                              type="button"
+                              onClick={() => handleRepayment(app)}
+                              disabled={balance === 0}
+                            >
+                              Pay
+                            </button>
+                          </div>
+                        </td>
+                        <td>
+                          {isChairperson && app.approvalStatus === "Approved" && app.repaymentSchedule ? (
+                            <button
+                              className="small-btn"
+                              onClick={() => showRepaymentSchedule(app)}
+                            >
+                              Schedule
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
