@@ -96,7 +96,11 @@ export function addTransaction(record) {
   const saccoId = getCurrentSaccoId();
   const settings = getContributionSettings();
   const fixedContributionAmount = Number(settings.contributionAmount) || 0;
-  const shouldUseFixedContribution = CONTRIBUTION_TYPES.includes(record.type) && fixedContributionAmount > 0;
+  const recordStatus = record.status || (record.type === "checkoff" ? "pending" : "approved");
+  const shouldUseFixedContribution =
+    CONTRIBUTION_TYPES.includes(record.type) &&
+    fixedContributionAmount > 0 &&
+    !(record.type === "checkoff" && recordStatus === "approved");
   const nextRecord = {
     id: Date.now(),
     memberName: record.memberName || user.name || "Member",
@@ -106,6 +110,7 @@ export function addTransaction(record) {
     amount: shouldUseFixedContribution ? fixedContributionAmount : Number(record.amount) || 0,
     description:
       record.description || (shouldUseFixedContribution ? settings.contributionDescription : "") || "",
+    status: recordStatus,
     createdAt: new Date().toISOString(),
   };
 

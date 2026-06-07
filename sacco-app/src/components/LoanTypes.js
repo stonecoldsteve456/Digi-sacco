@@ -48,6 +48,13 @@ const defaultLoanOptions = [
   },
 ];
 
+function getLoanDisplayStatus(loan) {
+  if ((Number(loan.amountPaid) || 0) >= Number(loan.amount || 0)) return "Paid";
+  if (loan.disbursementStatus === "Disbursed") return "Disbursed";
+  if (loan.approvalStatus === "Approved") return "Approved";
+  return loan.status || "Pending";
+}
+
 function LoanTypes() {
   const currentUser = getCurrentUser();
   const [loanOptions, setLoanOptions] = useState(defaultLoanOptions);
@@ -498,7 +505,7 @@ function LoanTypes() {
                         <td>{formatKes(app.amount)}</td>
                         <td>{formatKes(amountPaid)}</td>
                         <td>{formatKes(balance)}</td>
-                        <td>{app.status}</td>
+                        <td>{getLoanDisplayStatus(app)}</td>
                         <td>
                           {isChairperson && app.approvalStatus === "Pending" ? (
                             <button className="small-btn" onClick={() => handleApprove(app)}>

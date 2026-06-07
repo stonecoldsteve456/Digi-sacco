@@ -12,6 +12,81 @@
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
+.checkoff-flow-card {
+  background: #f8f3ef;
+  border-bottom: 1px solid #d8c7ba;
+  border-radius: 8px;
+  color: #2f2c2a;
+  margin-bottom: 24px;
+  padding: 22px 28px 26px;
+}
+
+.checkoff-flow-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  font-size: 1.45rem;
+  line-height: 1.2;
+}
+
+.flow-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  flex: 0 0 auto;
+  padding: 3px;
+  border: 2px solid #1f2937;
+  background: #ffffff;
+}
+
+.flow-icon span {
+  width: 5px;
+  border: 1px solid rgba(31, 41, 55, 0.2);
+}
+
+.flow-icon span:nth-child(1) {
+  height: 11px;
+  background: #16a34a;
+}
+
+.flow-icon span:nth-child(2) {
+  height: 18px;
+  background: #2563eb;
+}
+
+.flow-icon span:nth-child(3) {
+  height: 23px;
+  background: #ef4444;
+}
+
+.checkoff-flow-card ol {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding-left: 26px;
+}
+
+.checkoff-flow-card li {
+  padding-left: 6px;
+  line-height: 1.55;
+}
+
+.checkoff-flow-card li::marker {
+  font-weight: 700;
+}
+
+.checkoff-flow-card strong {
+  font-weight: 800;
+}
+
+.checkoff-flow-card strong::after {
+  content: " -> ";
+  font-weight: 500;
+}
+
 .approval-panel h3, .transaction-form-panel h3, .data-panel h3 {
   margin-top: 0;
   margin-bottom: 16px;
@@ -126,4 +201,14 @@
 
 .notification-item small {
   color: #6b7280;
+}
+
+@media (max-width: 640px) {
+  .checkoff-flow-card {
+    padding: 18px;
+  }
+
+  .checkoff-flow-card h2 {
+    font-size: 1.2rem;
+  }
 }

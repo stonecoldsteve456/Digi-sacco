@@ -46,10 +46,20 @@ function toMysqlDateTime(value) {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
+function normalizeChatMessages(messages) {
+  if (!Array.isArray(messages)) return [];
+  return messages
+    .slice(-12)
+    .map((message) => ({
+      role: message.role === "assistant" || message.role === "model" ? "model" : "user",
+      parts: [{ text: String(message.text || message.content || "").slice(0, 1000) }],
+    }))
+    .filter((message) => message.parts[0].text.trim());
+}
+
 async function createTables() {
   const pool = getMainPool();
 
-  // Create sacco table
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS sacco (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -70,7 +80,6 @@ async function createTables() {
   await ensureColumn(pool, "sacco", "contribution_frequency", "VARCHAR(40) DEFAULT 'Monthly'");
   await ensureColumn(pool, "sacco", "contribution_description", "VARCHAR(255) NULL");
 
-  // Update users table to add sacco_id
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS users (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -85,7 +94,6 @@ async function createTables() {
   `);
   await ensureColumn(pool, "users", "sacco_id", "INT NULL AFTER password_hash");
 
-  // Update transactions table to add sacco_id
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS transactions (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -103,6 +111,7 @@ async function createTables() {
   `);
   await ensureColumn(pool, "transactions", "member_name", "VARCHAR(120) NULL AFTER user_email");
   await ensureColumn(pool, "transactions", "sacco_id", "INT NULL AFTER member_name");
+  await ensureColumn(pool, "transactions", "status", "VARCHAR(40) DEFAULT 'approved' AFTER description");
 
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS categories (
@@ -235,7 +244,6 @@ async function createTables() {
     ) ENGINE=InnoDB;
   `);
 
-  // Initial data for categories (if empty)
   const [categoryRows] = await pool.execute("SELECT COUNT(*) AS count FROM categories");
   if (categoryRows[0].count === 0) {
     await pool.execute(
@@ -249,7 +257,6 @@ async function createTables() {
     );
   }
 
-  // Initial data for group_account_managers (if empty)
   const [managerRows] = await pool.execute("SELECT COUNT(*) AS count FROM group_account_managers");
   if (managerRows[0].count === 0) {
     await pool.execute(
@@ -284,9 +291,75 @@ async function createTables() {
   }
 }
 
-// API Routes
+app.post("/api/chat", async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
-// Register a new user
+  if (!apiKey) {
+    return res.status(503).json({
+      error: "Gemini API key is not configured.",
+      reply:
+        "I can help with Digi Sacco setup, member savings, loans, checkoffs, and reports once the Gemini API key is configured on the server.",
+    });
+  }
+
+  try {
+    const contents = normalizeChatMessages(req.body.messages);
+    const fallbackMessage =
+      "Start the conversation by greeting the visitor and guiding them through Digi Sacco automation, including members, savings, loans, checkoffs, reports, and mobile access.";
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [
+              {
+                text:
+                  "You are Digi Sacco's landing page assistant. Be warm, concise, and practical. Help visitors understand SACCO automation, member registration, savings, checkoffs, loans, approvals, reports, and mobile access. Ask one helpful follow-up question at a time.",
+              },
+            ],
+          },
+          contents: contents.length
+            ? contents
+            : [{ role: "user", parts: [{ text: fallbackMessage }] }],
+          generationConfig: {
+            temperature: 0.6,
+            maxOutputTokens: 300,
+          },
+        }),
+      }
+    );
+
+    const data = await response.json().catch(() => ({}));
+    const reply =
+      data.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text || "")
+        .join("\n")
+        .trim() || "";
+
+    if (!response.ok || !reply) {
+      return res.status(response.status || 500).json({
+        error: data.error?.message || "Gemini could not respond right now.",
+        reply: "I am having trouble reaching AI support right now. Please try again in a moment.",
+      });
+    }
+
+    return res.json({ reply });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      error: "Chat service unavailable.",
+      reply: "I am having trouble reaching AI support right now. Please try again in a moment.",
+    });
+  }
+});
+
 app.post("/api/auth/register", async (req, res) => {
   try {
     const pool = getMainPool();
@@ -313,11 +386,10 @@ app.post("/api/auth/register", async (req, res) => {
   }
 });
 
-// Record a transaction
 app.post("/api/transactions", async (req, res) => {
   try {
     const pool = getMainPool();
-    const { userEmail, memberName, type, amount, description, saccoId } = req.body;
+    const { userEmail, memberName, type, amount, description, saccoId, status } = req.body;
     if (!userEmail || !type || !amount) {
       return res.status(400).json({ error: "userEmail, type and amount are required." });
     }
@@ -325,8 +397,9 @@ app.post("/api/transactions", async (req, res) => {
     const parsedSaccoId = parseSaccoId(saccoId);
     let finalAmount = parseFloat(amount);
     let finalDescription = description || null;
+    const finalStatus = status || (type === "checkoff" ? "pending" : "approved");
 
-    if (isContributionType(type) && parsedSaccoId) {
+    if (isContributionType(type) && parsedSaccoId && !(type === "checkoff" && finalStatus === "approved")) {
       const [saccoRows] = await pool.execute(
         "SELECT contribution_amount, contribution_description FROM sacco WHERE id = ?",
         [parsedSaccoId]
@@ -339,7 +412,7 @@ app.post("/api/transactions", async (req, res) => {
     }
 
     await pool.execute(
-      "INSERT INTO transactions (user_email, member_name, sacco_id, type, amount, description) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO transactions (user_email, member_name, sacco_id, type, amount, description, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [
         userEmail.trim().toLowerCase(),
         memberName || null,
@@ -347,6 +420,7 @@ app.post("/api/transactions", async (req, res) => {
         type,
         finalAmount,
         finalDescription,
+        finalStatus,
       ]
     );
 
@@ -359,6 +433,7 @@ app.post("/api/transactions", async (req, res) => {
         type,
         amount: finalAmount,
         description: finalDescription,
+        status: finalStatus,
       },
     });
   } catch (error) {
@@ -367,7 +442,6 @@ app.post("/api/transactions", async (req, res) => {
   }
 });
 
-// Get transactions for a user
 app.get("/api/transactions", async (req, res) => {
   try {
     const pool = getMainPool();
@@ -376,7 +450,7 @@ app.get("/api/transactions", async (req, res) => {
 
     if (saccoId) {
       const [rows] = await pool.execute(
-        "SELECT id, user_email AS userEmail, member_name AS memberName, sacco_id AS saccoId, type, amount, description, created_at AS createdAt FROM transactions WHERE sacco_id = ? ORDER BY created_at DESC",
+        "SELECT id, user_email AS userEmail, member_name AS memberName, sacco_id AS saccoId, type, amount, description, status, created_at AS createdAt FROM transactions WHERE sacco_id = ? ORDER BY created_at DESC",
         [saccoId]
       );
       return res.json(rows);
@@ -384,7 +458,7 @@ app.get("/api/transactions", async (req, res) => {
 
     if (email) {
       const [rows] = await pool.execute(
-        "SELECT id, user_email AS userEmail, member_name AS memberName, sacco_id AS saccoId, type, amount, description, created_at AS createdAt FROM transactions WHERE user_email = ? ORDER BY created_at DESC",
+        "SELECT id, user_email AS userEmail, member_name AS memberName, sacco_id AS saccoId, type, amount, description, status, created_at AS createdAt FROM transactions WHERE user_email = ? ORDER BY created_at DESC",
         [email]
       );
       return res.json(rows);
@@ -397,7 +471,27 @@ app.get("/api/transactions", async (req, res) => {
   }
 });
 
-// Login
+app.put("/api/transactions/:id", async (req, res) => {
+  try {
+    const pool = getMainPool();
+    const status = (req.body.status || "").trim().toLowerCase();
+    if (!["approved", "rejected", "pending"].includes(status)) {
+      return res.status(400).json({ error: "Valid status is required." });
+    }
+
+    const [result] = await pool.execute(
+      "UPDATE transactions SET status = ? WHERE id = ? AND type = 'checkoff'",
+      [status, req.params.id]
+    );
+    if (result.affectedRows === 0) return res.status(404).json({ error: "Checkoff transaction not found." });
+
+    return res.json({ message: "Checkoff status updated.", status });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Could not update checkoff status." });
+  }
+});
+
 app.post("/api/auth/login", async (req, res) => {
   try {
     const pool = getMainPool();
@@ -436,7 +530,6 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// Get categories
 app.get("/api/categories", async (req, res) => {
   try {
     const pool = getMainPool();
@@ -636,7 +729,6 @@ app.delete("/api/:entity/:id", async (req, res, next) => {
   }
 });
 
-// Get group account managers
 app.get("/api/group-managers", async (req, res) => {
   try {
     const pool = getMainPool();
@@ -654,7 +746,6 @@ app.get("/api/group-managers", async (req, res) => {
   }
 });
 
-// Add a group account manager
 app.post("/api/group-managers", async (req, res) => {
   try {
     const pool = getMainPool();
@@ -675,7 +766,6 @@ app.post("/api/group-managers", async (req, res) => {
   }
 });
 
-// Get dashboard summary
 app.get("/api/dashboard/summary", async (req, res) => {
   try {
     const pool = getMainPool();
@@ -744,7 +834,6 @@ app.get("/api/dashboard/summary", async (req, res) => {
   }
 });
 
-// Delete a group account manager
 app.delete("/api/group-managers/:id", async (req, res) => {
   const id = req.params.id;
 
@@ -893,7 +982,6 @@ app.put("/api/loan-applications/:id", async (req, res) => {
   }
 });
 
-// NEW: Create a sacco
 app.get("/api/sacco", async (req, res) => {
   try {
     const pool = getMainPool();
@@ -987,7 +1075,6 @@ app.post("/api/sacco", async (req, res) => {
   }
 });
 
-// NEW: Update user's sacco
 app.put("/api/users/sacco", async (req, res) => {
   try {
     const pool = getMainPool();
@@ -996,7 +1083,6 @@ app.put("/api/users/sacco", async (req, res) => {
       return res.status(400).json({ error: "Email is required." });
     }
     if (saccoId === undefined || saccoId === null) {
-      // Allow setting to null to remove from sacco
       await pool.execute(
         "UPDATE users SET sacco_id = NULL WHERE email = ?",
         [email.trim().toLowerCase()]
@@ -1004,7 +1090,6 @@ app.put("/api/users/sacco", async (req, res) => {
       return res.json({ message: "User removed from sacco." });
     }
 
-    // Verify sacco exists
     const [sacco] = await pool.execute("SELECT id FROM sacco WHERE id = ?", [saccoId]);
     if (sacco.length === 0) {
       return res.status(404).json({ error: "Sacco not found." });

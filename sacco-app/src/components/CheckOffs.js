@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { FiCheckCircle, FiX, FiLoader, FiUsers, FiUpload } from "react-icons/fi";
 import { apiRequest, getSessionPayload, withSacco } from "../utils/api";
 import {
   addTransaction,
@@ -11,14 +10,15 @@ import "./CheckOffs.css";
 
 function CheckOffs() {
   const currentUser = getCurrentUser();
+  const isChairperson = currentUser.role === "chairperson";
   const [records, setRecords] = useState([]);
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
-    memberName: currentUser.name || "",
+    memberName: isChairperson ? "" : currentUser.name || "",
     amount: "",
-    description: "Payroll checkoff",
+    description: isChairperson ? "Loan checkoff deduction" : "Payroll checkoff",
   });
 
   // Load regular transactions (for member view or history)
@@ -49,10 +49,8 @@ function CheckOffs() {
     apiRequest(withSacco(`/transactions?email=${encodeURIComponent(currentUser.email || "")}`))
       .then((data) => {
         const allTransactions = Array.isArray(data) ? data : [];
-        // For demonstration, we'll consider recent checkoffs as pending approvals
-        // In reality, you'd have a specific status field or separate endpoint
         const recentCheckoffs = allTransactions
-          .filter(record => record.type === "checkoff")
+          .filter(record => record.type === "checkoff" && (record.status || "pending") === "pending")
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           .slice(0, 10); // Show last 10 as "pending" for demo
         
@@ -62,7 +60,7 @@ function CheckOffs() {
         setError("Could not load pending approvals: " + err.message);
         const allTransactions = getTransactions();
         const recentCheckoffs = allTransactions
-          .filter(record => record.type === "checkoff")
+          .filter(record => record.type === "checkoff" && (record.status || "pending") === "pending")
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           .slice(0, 10);
         setPendingApprovals(recentCheckoffs);
@@ -85,7 +83,7 @@ function CheckOffs() {
     
     window.addEventListener("digi-finance-updated", handleUpdate);
     return () => window.removeEventListener("digi-finance-updated", handleUpdate);
-  }, [loadRecords, loadPendingApprovals]);
+  }, [loadRecords, loadPendingApprovals, currentUser.role]);
 
   const handleChange = (field) => (event) => {
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
@@ -104,7 +102,8 @@ function CheckOffs() {
     const payload = getSessionPayload({ 
       ...form, 
       amount: Number(form.amount),
-      type: "checkoff"
+      type: "checkoff",
+      status: isChairperson ? "approved" : "pending",
     });
 
     apiRequest("/transactions", {
@@ -113,7 +112,12 @@ function CheckOffs() {
     })
       .then((data) => {
         addTransaction(data.transaction || payload);
-        setForm((prev) => ({ ...prev, amount: "", description: "Payroll checkoff" }));
+        setForm((prev) => ({
+          ...prev,
+          memberName: isChairperson ? "" : prev.memberName,
+          amount: "",
+          description: isChairperson ? "Loan checkoff deduction" : "Payroll checkoff",
+        }));
         loadRecords();
         if (isChairperson) {
           loadPendingApprovals();
@@ -122,7 +126,12 @@ function CheckOffs() {
       .catch((err) => {
         addTransaction(payload);
         setError("Saved locally because live save failed: " + err.message);
-        setForm((prev) => ({ ...prev, amount: "", description: "Payroll checkoff" }));
+        setForm((prev) => ({
+          ...prev,
+          memberName: isChairperson ? "" : prev.memberName,
+          amount: "",
+          description: isChairperson ? "Loan checkoff deduction" : "Payroll checkoff",
+        }));
         loadRecords();
         if (isChairperson) {
           loadPendingApprovals();
@@ -191,22 +200,85 @@ function CheckOffs() {
       <div className="section-header">
         <h1>Check Offs</h1>
         <p>
-          {isChairperson 
-            ? "Review and approve payroll deduction requests from members." 
+          {isChairperson
+            ? "Record loan checkoff deductions for approved member loans."
             : "Record your payroll deduction payments. These count as contribution payments."}
         </p>
+      </div>
+
+      <div className="checkoff-flow-card">
+        <h2>
+          <span className="flow-icon" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+          Example Flow
+        </h2>
+        <ol>
+          <li>
+            <strong>Member loan approved</strong>
+            <span>Chairperson enters member's name + amount in checkoff form.</span>
+          </li>
+          <li>
+            <strong>Chairperson records checkoff</strong>
+            <span>Approval logged.</span>
+          </li>
+          <li>
+            <strong>System applies deduction</strong>
+            <span>Member's account updated with the checkoff transaction.</span>
+          </li>
+        </ol>
       </div>
 
       {isChairperson ? (
         // Chairperson View: Approval Interface
         <>
+          <div className="data-panel transaction-form-panel">
+            <h3>Record Loan Checkoff</h3>
+            <form className="field-grid" onSubmit={handleSubmit}>
+              <label>
+                Member Name
+                <input
+                  value={form.memberName}
+                  onChange={handleChange("memberName")}
+                  placeholder="Enter member name"
+                />
+              </label>
+              <label>
+                Checkoff Amount
+                <input
+                  type="number"
+                  min="0"
+                  value={form.amount}
+                  onChange={handleChange("amount")}
+                  placeholder="KES 0.00"
+                />
+              </label>
+              <label>
+                Description
+                <input
+                  value={form.description}
+                  onChange={handleChange("description")}
+                />
+              </label>
+              <button className="primary" type="submit" disabled={loading}>
+                {loading ? "Recording..." : "Record Checkoff"}
+              </button>
+            </form>
+            <p className="muted-copy">
+              Recording here logs the approval and applies the deduction immediately.
+            </p>
+            {error && <p className="form-error">{error}</p>}
+          </div>
+
           <div className="data-panel approval-panel">
-            <h3>Pending Checkoff Approvals</h3>
+            <h3>Member Submitted Checkoffs</h3>
             {loading && pendingApprovals.length === 0 ? (
               <p>Loading pending approvals...</p>
             ) : (
               pendingApprovals.length === 0 ? (
-                <p>No pending checkoff approvals.</p>
+                <p>No member submitted checkoffs are waiting for approval.</p>
               ) : (
                 <table className="data-table">
                   <thead>
