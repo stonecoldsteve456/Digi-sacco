@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   FiArrowUpRight,
   FiBell,
@@ -9,7 +9,7 @@ import {
   FiTrendingUp,
   FiUser,
 } from "react-icons/fi";
-import { formatKes, getFinanceSummary } from "../utils/financeStore";
+import { formatKes, getCurrentSaccoId, getFinanceSummary } from "../utils/financeStore";
 import { apiRequest, withSacco } from "../utils/api";
 import Sidebar from "./Sidebar";
 import SearchBar from "./SearchBar";
@@ -28,6 +28,8 @@ import IncomeCategories from "./IncomeCategories";
 import AssetCategories from "./AssetCategories";
 import GroupAccountManagers from "./GroupAccountManagers";
 import LoanTypes from "./LoanTypes";
+
+const MESSAGE_READ_KEY_PREFIX = "digiCommunicationLastViewed";
 
 function Dashboard({ setIsLoggedIn, setActivePage }) {
   const [currentSection, setCurrentSection] = useState("summary");
@@ -52,6 +54,41 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
     fixedContributionAmount: 0,
     contributionFrequency: "Monthly",
   });
+  const [unreadMessages, setUnreadMessages] = useState(0);
+
+  const getMessageReadKey = useCallback(() => {
+    const saccoId = getCurrentSaccoId() || "all";
+    const userKey = (currentUser.name || "member").trim().toLowerCase().replace(/\s+/g, "-");
+    return `${MESSAGE_READ_KEY_PREFIX}:${saccoId}:${userKey}`;
+  }, [currentUser.name]);
+
+  const getLastViewedMessagesAt = useCallback(
+    () => Number(window.localStorage.getItem(getMessageReadKey()) || 0),
+    [getMessageReadKey]
+  );
+
+  const markMessagesViewed = useCallback(() => {
+    window.localStorage.setItem(getMessageReadKey(), String(Date.now()));
+    setUnreadMessages(0);
+  }, [getMessageReadKey]);
+
+  const loadUnreadMessages = useCallback(() => {
+    apiRequest(withSacco("/communications"))
+      .then((records) => {
+        const lastViewedAt = getLastViewedMessagesAt();
+        const unreadCount = (Array.isArray(records) ? records : []).filter((record) => {
+          const createdAt = new Date(record.createdAt || record.created_at || 0).getTime();
+          return createdAt > lastViewedAt;
+        }).length;
+        setUnreadMessages(unreadCount);
+      })
+      .catch((err) => console.log("Failed to load message notifications:", err));
+  }, [getLastViewedMessagesAt]);
+
+  const openMessages = () => {
+    setCurrentSection("communication");
+    markMessagesViewed();
+  };
 
   const handleLogout = () => {
     window.localStorage.removeItem("digiAuth");
@@ -94,8 +131,16 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
         return "";
       }
     })();
+    const authRole = (() => {
+      try {
+        return JSON.parse(window.localStorage.getItem("digiAuth") || "{}").role || "member";
+      } catch (error) {
+        return "member";
+      }
+    })();
+    const loanScope = authRole === "member" ? "&loanScope=member" : "";
 
-    apiRequest(withSacco(`/dashboard/summary?email=${encodeURIComponent(authEmail)}`))
+    apiRequest(withSacco(`/dashboard/summary?email=${encodeURIComponent(authEmail)}${loanScope}`))
       .then((data) => {
         if (data) {
           setSummary((prev) => ({
@@ -108,6 +153,35 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
 
     return () => window.removeEventListener("digi-finance-updated", refreshFinanceSummary);
   }, []);
+
+  useEffect(() => {
+    if (currentSection === "communication") {
+      markMessagesViewed();
+      return undefined;
+    }
+
+    loadUnreadMessages();
+    const refreshInterval = window.setInterval(loadUnreadMessages, 10000);
+    const handleNewRecord = (event) => {
+      if (event.detail?.endpoint === "/communications") {
+        loadUnreadMessages();
+      }
+    };
+    const handleStorage = (event) => {
+      if (event.key === getMessageReadKey()) {
+        loadUnreadMessages();
+      }
+    };
+
+    window.addEventListener("digi-record-created", handleNewRecord);
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.clearInterval(refreshInterval);
+      window.removeEventListener("digi-record-created", handleNewRecord);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [currentSection, currentUser.name, getMessageReadKey, loadUnreadMessages, markMessagesViewed]);
 
   const formatRole = (role) =>
     role
@@ -137,8 +211,22 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
           <div className="dashboard-actions">
             <SearchBar onSearch={setSearchText} />
             <div className="user-actions">
-              <button className="icon-btn" aria-label="Notifications">
+              <button
+                className={`icon-btn notification-bell${unreadMessages > 0 ? " has-unread" : ""}`}
+                aria-label={
+                  unreadMessages > 0
+                    ? `${unreadMessages} unread message${unreadMessages === 1 ? "" : "s"}`
+                    : "No unread messages"
+                }
+                type="button"
+                onClick={openMessages}
+              >
                 <FiBell />
+                {unreadMessages > 0 && (
+                  <span className="notification-badge" aria-hidden="true">
+                    {unreadMessages > 99 ? "99+" : unreadMessages}
+                  </span>
+                )}
               </button>
               <button className="icon-btn" aria-label="Refresh dashboard">
                 <FiRefreshCw />
@@ -329,7 +417,9 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
         {currentSection === "membership" && <MembershipManagement />}
         {currentSection === "groupops" && <GroupOperations />}
         {currentSection === "investments" && <GroupInvestments />}
-        {currentSection === "communication" && <Communication />}
+        {currentSection === "communication" && (
+          <Communication mode={currentUser.role === "secretary" ? "manage" : "read"} />
+        )}
         {currentSection === "roles" && <GroupRoles />}
         {currentSection === "expenses" && <ExpensesCategory />}
         {currentSection === "income" && <IncomeCategories />}

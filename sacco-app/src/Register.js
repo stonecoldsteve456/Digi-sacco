@@ -65,6 +65,7 @@ function Register({ setActivePage }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [registrationMode, setRegistrationMode] = useState("join");
+  const [selectedRole, setSelectedRole] = useState("member");
   const [saccoSearch, setSaccoSearch] = useState("");
   const [linkedSacco, setLinkedSacco] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -116,7 +117,7 @@ function Register({ setActivePage }) {
       idNumber: idNumber.trim(),
       email: emailValue,
       passwordHash: window.btoa(password),
-      role: registrationMode === "create" ? "chairperson" : "member",
+      role: registrationMode === "create" ? "chairperson" : selectedRole,
       saccoId: sacco?.id || null,
       saccoName: sacco?.name || "",
     };
@@ -188,10 +189,17 @@ function Register({ setActivePage }) {
         value={email}
         onChange={(e) => setEmail(e.target.value)}
       />
-      <select value={registrationMode} onChange={(e) => setRegistrationMode(e.target.value)}>
-        <option value="join">Join an existing Sacco as a member</option>
-        <option value="create">Create a new Sacco as chairperson</option>
+    <select value={registrationMode} onChange={(e) => setRegistrationMode(e.target.value)}>
+      <option value="join">Join an existing Sacco as</option>
+      <option value="create">Create a new Sacco as chairperson</option>
+    </select>
+    {registrationMode === "join" && (
+      <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}>
+        <option value="member">Member</option>
+        <option value="secretary">Secretary</option>
+        <option value="treasurer">Treasurer</option>
       </select>
+    )}
       {registrationMode === "join" && (
         <>
           <input

@@ -35,7 +35,7 @@ function Sidebar({ onSelect, activeView, userRole }) {
       "deposits", "withdrawals", "checkoffs"
     ],
     secretary: [
-      "summary", "membership", "roles"
+      "summary", "membership", "roles", "communication"
     ],
     member: [ 
       "summary", "transactions", "deposits", "withdrawals", "checkoffs", "loans" 
@@ -46,6 +46,8 @@ function Sidebar({ onSelect, activeView, userRole }) {
   const allowedViews = rolePermissions[userRole] || rolePermissions.member;
 
   const isViewAccessible = (view) => allowedViews.includes(view);
+  const canSeeTransactions = ["checkoffs", "deposits", "withdrawals"].some(isViewAccessible);
+  const canSeeMembership = ["groupops", "investments", "communication"].some(isViewAccessible);
 
   const toggleMenu = (menu) => {
     setOpenMenu(openMenu === menu ? null : menu);
@@ -97,128 +99,156 @@ function Sidebar({ onSelect, activeView, userRole }) {
             <span>Dashboard</span>
           </li>
 
-          <li onClick={() => toggleMenu("transactions")}>
-            <FiCreditCard />
-            <span>Transactions</span>
-            <FiChevronDown className="menu-caret" />
-            {openMenu === "transactions" && (
-              <ul className="submenu">
-                <li
-                  className={activeView === "checkoffs" ? "active" : ""}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleSelect("checkoffs");
-                  }}
-                >
-                  <FiShield />
-                  <span>Check Offs</span>
-                </li>
-                <li
-                  className={activeView === "deposits" ? "active" : ""}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleSelect("deposits");
-                  }}
-                >
-                  <FiDollarSign />
-                  <span>Deposits</span>
-                </li>
-                <li
-                  className={activeView === "withdrawals" ? "active" : ""}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleSelect("withdrawals");
-                  }}
-                >
-                  <FiTrendingUp />
-                  <span>Withdrawals</span>
-                </li>
-              </ul>
-            )}
-          </li>
+          {canSeeTransactions && (
+            <li onClick={() => toggleMenu("transactions")}>
+              <FiCreditCard />
+              <span>Transactions</span>
+              <FiChevronDown className="menu-caret" />
+              {openMenu === "transactions" && (
+                <ul className="submenu">
+                  {isViewAccessible("checkoffs") && (
+                    <li
+                      className={activeView === "checkoffs" ? "active" : ""}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleSelect("checkoffs");
+                      }}
+                    >
+                      <FiShield />
+                      <span>Check Offs</span>
+                    </li>
+                  )}
+                  {isViewAccessible("deposits") && (
+                    <li
+                      className={activeView === "deposits" ? "active" : ""}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleSelect("deposits");
+                      }}
+                    >
+                      <FiDollarSign />
+                      <span>Deposits</span>
+                    </li>
+                  )}
+                  {isViewAccessible("withdrawals") && (
+                    <li
+                      className={activeView === "withdrawals" ? "active" : ""}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleSelect("withdrawals");
+                      }}
+                    >
+                      <FiTrendingUp />
+                      <span>Withdrawals</span>
+                    </li>
+                  )}
+                </ul>
+              )}
+            </li>
+          )}
 
-          <li onClick={() => toggleMenu("membership")}>
-            <FiUsers />
-            <span>Membership Management</span>
-            <FiChevronDown className="menu-caret" />
-            {openMenu === "membership" && (
-              <ul className="submenu">
-                <li
-                  className={activeView === "groupops" ? "active" : ""}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleSelect("groupops");
-                  }}
-                >
-                  <FiBriefcase />
-                  <span>Group Operations</span>
-                </li>
-                <li
-                  className={activeView === "investments" ? "active" : ""}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleSelect("investments");
-                  }}
-                >
-                  <FiPieChart />
-                  <span>Group Investments</span>
-                </li>
-                <li
-                  className={activeView === "communication" ? "active" : ""}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleSelect("communication");
-                  }}
-                >
-                  <FiMessageSquare />
-                  <span>Communication</span>
-                </li>
-              </ul>
-            )}
-          </li>
+          {canSeeMembership && (
+            <li onClick={() => toggleMenu("membership")}>
+              <FiUsers />
+              <span>Membership Management</span>
+              <FiChevronDown className="menu-caret" />
+              {openMenu === "membership" && (
+                <ul className="submenu">
+                  {isViewAccessible("groupops") && (
+                    <li
+                      className={activeView === "groupops" ? "active" : ""}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleSelect("groupops");
+                      }}
+                    >
+                      <FiBriefcase />
+                      <span>Group Operations</span>
+                    </li>
+                  )}
+                  {isViewAccessible("investments") && (
+                    <li
+                      className={activeView === "investments" ? "active" : ""}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleSelect("investments");
+                      }}
+                    >
+                      <FiPieChart />
+                      <span>Group Investments</span>
+                    </li>
+                  )}
+                  {isViewAccessible("communication") && (
+                    <li
+                      className={activeView === "communication" ? "active" : ""}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleSelect("communication");
+                      }}
+                    >
+                      <FiMessageSquare />
+                      <span>Communication</span>
+                    </li>
+                  )}
+                </ul>
+              )}
+            </li>
+          )}
 
-          <li
-            className={activeView === "roles" ? "active" : ""}
-            onClick={() => handleSelect("roles")}
-          >
-            <FiShield />
-            <span>Group Roles</span>
-          </li>
-          <li
-            className={activeView === "loans" ? "active" : ""}
-            onClick={() => handleSelect("loans")}
-          >
-            <FiFileText />
-            <span>Loan Types</span>
-          </li>
-          <li
-            className={activeView === "expenses" ? "active" : ""}
-            onClick={() => handleSelect("expenses")}
-          >
-            <FiCreditCard />
-            <span>Expense Categories</span>
-          </li>
-          <li
-            className={activeView === "income" ? "active" : ""}
-            onClick={() => handleSelect("income")}
-          >
-            <FiDollarSign />
-            <span>Income Categories</span>
-          </li>
-          <li
-            className={activeView === "assets" ? "active" : ""}
-            onClick={() => handleSelect("assets")}
-          >
-            <FiLayers />
-            <span>Asset Categories</span>
-          </li>
-          <li
-            className={activeView === "groupmanagers" ? "active" : ""}
-            onClick={() => handleSelect("groupmanagers")}
-          >
-            <FiUsers />
-            <span>Group Account Managers</span>
-          </li>
+          {isViewAccessible("roles") && (
+            <li
+              className={activeView === "roles" ? "active" : ""}
+              onClick={() => handleSelect("roles")}
+            >
+              <FiShield />
+              <span>Group Roles</span>
+            </li>
+          )}
+          {isViewAccessible("loans") && (
+            <li
+              className={activeView === "loans" ? "active" : ""}
+              onClick={() => handleSelect("loans")}
+            >
+              <FiFileText />
+              <span>Loan Types</span>
+            </li>
+          )}
+          {isViewAccessible("expenses") && (
+            <li
+              className={activeView === "expenses" ? "active" : ""}
+              onClick={() => handleSelect("expenses")}
+            >
+              <FiCreditCard />
+              <span>Expense Categories</span>
+            </li>
+          )}
+          {isViewAccessible("income") && (
+            <li
+              className={activeView === "income" ? "active" : ""}
+              onClick={() => handleSelect("income")}
+            >
+              <FiDollarSign />
+              <span>Income Categories</span>
+            </li>
+          )}
+          {isViewAccessible("assets") && (
+            <li
+              className={activeView === "assets" ? "active" : ""}
+              onClick={() => handleSelect("assets")}
+            >
+              <FiLayers />
+              <span>Asset Categories</span>
+            </li>
+          )}
+          {isViewAccessible("groupmanagers") && (
+            <li
+              className={activeView === "groupmanagers" ? "active" : ""}
+              onClick={() => handleSelect("groupmanagers")}
+            >
+              <FiUsers />
+              <span>Group Account Managers</span>
+            </li>
+          )}
         </ul>
       </aside>
       <div

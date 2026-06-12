@@ -1,7 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest, getSessionPayload, withSacco } from "../utils/api";
 
-function LiveEntityPage({ title, description, endpoint, fields, columns, initialForm = {} }) {
+function LiveEntityPage({
+  title,
+  description,
+  endpoint,
+  fields,
+  columns,
+  initialForm = {},
+  className = "",
+  tableClassName = "data-table",
+  tableTitle = "",
+  actionLabel = "Delete",
+  readOnly = false,
+}) {
   const emptyForm = useMemo(
     () =>
       fields.reduce(
@@ -43,6 +55,11 @@ function LiveEntityPage({ title, description, endpoint, fields, columns, initial
     })
       .then(() => {
         setForm(emptyForm);
+        window.dispatchEvent(
+          new CustomEvent("digi-record-created", {
+            detail: { endpoint: baseEndpoint },
+          })
+        );
         loadRecords();
       })
       .catch((err) => setError(err.message))
@@ -60,79 +77,86 @@ function LiveEntityPage({ title, description, endpoint, fields, columns, initial
   };
 
   return (
-    <section className="section-shell">
+    <section className={`section-shell ${className}`.trim()}>
       <div className="section-header">
         <h1>{title}</h1>
         <p>{description}</p>
       </div>
 
-      <div className="data-panel transaction-form-panel">
-        <form className="field-grid" onSubmit={handleSubmit}>
-          {fields.map((field) => (
-            <label key={field.name}>
-              {field.label}
-              {field.type === "select" ? (
-                <select value={form[field.name] || ""} onChange={handleChange(field.name)}>
-                  {(field.options || []).map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              ) : field.type === "textarea" ? (
-                <textarea
-                  rows="3"
-                  value={form[field.name] || ""}
-                  onChange={handleChange(field.name)}
-                  placeholder={field.placeholder || ""}
-                />
-              ) : (
-                <input
-                  type={field.type || "text"}
-                  value={form[field.name] || ""}
-                  onChange={handleChange(field.name)}
-                  placeholder={field.placeholder || ""}
-                />
-              )}
-            </label>
-          ))}
-          <button className="primary" type="submit" disabled={loading}>
-            {loading ? "Saving..." : "Save"}
-          </button>
-        </form>
-        {error && <p className="form-error">{error}</p>}
-      </div>
+      {!readOnly && (
+        <div className="data-panel transaction-form-panel">
+          <form className="field-grid" onSubmit={handleSubmit}>
+            {fields.map((field) => (
+              <label key={field.name}>
+                {field.label}
+                {field.type === "select" ? (
+                  <select value={form[field.name] || ""} onChange={handleChange(field.name)}>
+                    {(field.options || []).map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                ) : field.type === "textarea" ? (
+                  <textarea
+                    rows="3"
+                    value={form[field.name] || ""}
+                    onChange={handleChange(field.name)}
+                    placeholder={field.placeholder || ""}
+                  />
+                ) : (
+                  <input
+                    type={field.type || "text"}
+                    value={form[field.name] || ""}
+                    onChange={handleChange(field.name)}
+                    placeholder={field.placeholder || ""}
+                  />
+                )}
+              </label>
+            ))}
+            <button className="primary" type="submit" disabled={loading}>
+              {loading ? "Saving..." : "Save"}
+            </button>
+          </form>
+          {error && <p className="form-error">{error}</p>}
+        </div>
+      )}
 
       <div className="data-panel">
+        {tableTitle && <h2 className="data-panel-title">{tableTitle}</h2>}
         {loading && records.length === 0 ? (
           <p>Loading...</p>
         ) : records.length === 0 ? (
           <p>No records yet.</p>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                {columns.map((column) => (
-                  <th key={column.key}>{column.label}</th>
-                ))}
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {records.map((record) => (
-                <tr key={record.id}>
+          <div className="data-table-wrap">
+            <table className={tableClassName}>
+              <thead>
+                <tr>
                   {columns.map((column) => (
-                    <td key={column.key}>{column.render ? column.render(record) : record[column.key]}</td>
+                    <th key={column.key}>{column.label}</th>
                   ))}
-                  <td>
-                    <button className="small-btn reject" type="button" onClick={() => handleDelete(record.id)}>
-                      Delete
-                    </button>
-                  </td>
+                  {!readOnly && <th>Actions</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {records.map((record) => (
+                  <tr key={record.id}>
+                    {columns.map((column) => (
+                      <td key={column.key}>{column.render ? column.render(record) : record[column.key]}</td>
+                    ))}
+                    {!readOnly && (
+                      <td>
+                        <button className="small-btn reject" type="button" onClick={() => handleDelete(record.id)}>
+                          {actionLabel}
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </section>

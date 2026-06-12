@@ -55,12 +55,23 @@ function getLoanDisplayStatus(loan) {
   return loan.status || "Pending";
 }
 
+function loanBelongsToCurrentUser(loan, currentUser) {
+  const userEmail = (currentUser.email || "").trim().toLowerCase();
+  const userName = (currentUser.name || "").trim().toLowerCase();
+  const loanEmail = (loan.userEmail || "").trim().toLowerCase();
+  const loanName = (loan.memberName || "").trim().toLowerCase();
+
+  return Boolean((userEmail && loanEmail === userEmail) || (userName && loanName === userName));
+}
+
 function LoanTypes() {
   const currentUser = getCurrentUser();
+  const currentUserEmail = currentUser.email || "";
+  const currentUserName = currentUser.name || "";
   const [loanOptions, setLoanOptions] = useState(defaultLoanOptions);
   const [selectedLoan, setSelectedLoan] = useState(loanOptions[0]);
   const [formData, setFormData] = useState({
-    memberName: currentUser.name || "",
+    memberName: currentUserName,
     amount: "",
     purpose: "",
     repaymentPeriod: loanOptions[0].repaymentPeriod,
@@ -80,14 +91,25 @@ function LoanTypes() {
       })
       .catch(() => {});
 
+    // IMPORTANT: always fetch all loans for chairperson,
+    // and fetch only this member's loans for non-chairperson.
+    // This prevents members seeing chairperson approval buttons.
     const applicationsPath = isChairperson
       ? withSacco("/loan-applications")
-      : withSacco(`/loan-applications?email=${encodeURIComponent(currentUser.email || "")}`);
+      : withSacco(`/loan-applications?email=${encodeURIComponent(currentUserEmail)}`);
 
     apiRequest(applicationsPath)
-      .then((data) => setApplications(Array.isArray(data) ? data : []))
+      .then((data) => {
+        const loadedApplications = Array.isArray(data) ? data : [];
+        const memberUser = { email: currentUserEmail, name: currentUserName };
+        setApplications(
+          isChairperson
+            ? loadedApplications
+            : loadedApplications.filter((loan) => loanBelongsToCurrentUser(loan, memberUser))
+        );
+      })
       .catch(() => setApplications(getLoanApplications()));
-  }, [currentUser.email, isChairperson]);
+  }, [currentUserEmail, currentUserName, isChairperson]);
 
   const persistLoan = (loan) => {
     return apiRequest(`/loan-applications/${loan.id}`, {
@@ -291,6 +313,7 @@ function LoanTypes() {
 
   const handleDisburseLoan = async (loan) => {
     const updatedApplications = applications.map((application) => {
+
       if (application.id !== loan.id) return application;
 
       if (application.approvalStatus !== "Approved") {
@@ -325,11 +348,13 @@ function LoanTypes() {
     addNotification(`Loan for ${loan.memberName} disbursed by ${currentUser.name}.`);
   };
 
-  const showRepaymentSchedule = (loan) => {
-    const schedule = calculateRepaymentSchedule(loan.amount, loan.interestRate, loan.repaymentPeriod);
-    console.log('Repayment Schedule for', loan.loanType, schedule);
-    alert('Repayment schedule logged to console. Check devtools for details.');
-  };
+  // Removed Schedule button, so keep this helper only if needed later.
+  // const showRepaymentSchedule = (loan) => {
+  //   const schedule = calculateRepaymentSchedule(loan.amount, loan.interestRate, loan.repaymentPeriod);
+  //   console.log('Repayment Schedule for', loan.loanType, schedule);
+  //   alert('Repayment schedule logged to console. Check devtools for details.');
+  // };
+
 
   const handleApprove = async (loan) => {
     const updatedApplications = applications.map((application) => {
@@ -476,91 +501,95 @@ function LoanTypes() {
                   : "No loan requests have been submitted yet."}
               </p>
             ) : (
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Loan</th>
-                    <th>Member</th>
-                    <th>Amount</th>
-                    <th>Paid</th>
-                    <th>Balance</th>
-                    <th>Status</th>
-                    <th>Approval</th>
-                    <th>Disbursement</th>
-                    <th>Approved By</th>
-                    <th>Next Due</th>
-                    <th>Repayment</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {applications.map((app) => {
-                    const amountPaid = Number(app.amountPaid) || 0;
-                    const balance = Math.max(Number(app.amount) - amountPaid, 0);
+              <div className="loan-table-wrap">
+                <table className="admin-table loan-applications-table">
+                  <thead>
+                    <tr>
+                      <th>Loan</th>
+                      <th>Member</th>
+                      <th>Amount</th>
+                      <th>Paid</th>
+                      <th>Balance</th>
+                      <th>Status</th>
+                      <th>Approval</th>
+                      <th>Disbursement</th>
+                      <th>Approved By</th>
+                      <th>Next Due</th>
+                      <th>Repayment</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {applications.map((app) => {
+                      const amountPaid = Number(app.amountPaid) || 0;
+                      const balance = Math.max(Number(app.amount) - amountPaid, 0);
 
-                    return (
-                      <tr key={app.id}>
-                        <td>{app.loanType}</td>
-                        <td>{app.memberName}</td>
-                        <td>{formatKes(app.amount)}</td>
-                        <td>{formatKes(amountPaid)}</td>
-                        <td>{formatKes(balance)}</td>
-                        <td>{getLoanDisplayStatus(app)}</td>
-                        <td>
-                          {isChairperson && app.approvalStatus === "Pending" ? (
-                            <button className="small-btn" onClick={() => handleApprove(app)}>
-                              Approve
-                            </button>
-                          ) : (
-                            <span>{app.approvalStatus}</span>
-                          )}
-                        </td>
-                        <td>
-                          {isChairperson && app.approvalStatus === "Approved" && app.disbursementStatus === "Pending" ? (
-                            <button className="small-btn" onClick={() => handleDisburseLoan(app)}>
-                              Disburse
-                            </button>
-                          ) : (
-                            <span>{app.disbursementStatus}</span>
-                          )}
-                        </td>
-                        <td>{app.approvedBy || "-"}</td>
-                        <td>{app.nextDue}</td>
-                        <td>
-                          <div className="repayment-control">
-                            <input
-                              type="number"
-                              min="0"
-                              value={repayments[app.id] || ""}
-                              onChange={handleRepaymentChange(app.id)}
-                              placeholder="KES"
-                              disabled={balance === 0}
-                            />
-                            <button
-                              className="small-btn"
-                              type="button"
-                              onClick={() => handleRepayment(app)}
-                              disabled={balance === 0}
-                            >
-                              Pay
-                            </button>
-                          </div>
-                        </td>
-                        <td>
-                          {isChairperson && app.approvalStatus === "Approved" && app.repaymentSchedule ? (
-                            <button
-                              className="small-btn"
-                              onClick={() => showRepaymentSchedule(app)}
-                            >
-                              Schedule
-                            </button>
-                          ) : null}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                      return (
+                        <tr key={app.id}>
+                          <td>{app.loanType}</td>
+                          <td>{app.memberName}</td>
+                          <td>{formatKes(app.amount)}</td>
+                          <td>{formatKes(amountPaid)}</td>
+                          <td>{formatKes(balance)}</td>
+                          <td>{getLoanDisplayStatus(app)}</td>
+                          <td>
+                            {isChairperson ? (
+                              app.approvalStatus === "Pending" ? (
+                                <button className="btn-approve" type="button" onClick={() => handleApprove(app)}>
+                                  Approve
+                                </button>
+                              ) : app.approvalStatus === "Approved" ? (
+                                <button className="btn-approved" type="button" disabled>
+                                  Approved
+                                </button>
+                              ) : (
+                                <span>{app.approvalStatus}</span>
+                              )
+                            ) : (
+                              <span>{app.approvalStatus}</span>
+                            )}
+                          </td>
+                          <td>
+                            {isChairperson && app.approvalStatus === "Approved" && app.disbursementStatus === "Pending" ? (
+                              <button className="btn-disburse" type="button" onClick={() => handleDisburseLoan(app)}>
+                                Disburse
+                              </button>
+                            ) : app.disbursementStatus === "Disbursed" ? (
+                              <button className="btn-disbursed" type="button" disabled>
+                                Disbursed
+                              </button>
+                            ) : (
+                              <span>{app.disbursementStatus}</span>
+                            )}
+                          </td>
+                          <td>{app.approvedBy || "-"}</td>
+                          <td>{app.nextDue}</td>
+                          <td>
+                            <div className="repayment-control">
+                              <input
+                                type="number"
+                                min="0"
+                                value={repayments[app.id] || ""}
+                                onChange={handleRepaymentChange(app.id)}
+                                placeholder="KES"
+                                disabled={balance === 0}
+                              />
+                              <button
+                                className="btn-pay"
+                                type="button"
+                                onClick={() => handleRepayment(app)}
+                                disabled={balance === 0}
+                                style={{ opacity: balance === 0 ? 0.6 : 1 }}
+                              >
+                                Pay
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
 

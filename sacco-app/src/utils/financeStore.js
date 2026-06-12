@@ -118,15 +118,27 @@ export function addTransaction(record) {
   return nextRecord;
 }
 
-export function getLoanApplications() {
+function loanBelongsToUser(record, user = getCurrentUser()) {
+  const userEmail = (user.email || "").trim().toLowerCase();
+  const userName = (user.name || "").trim().toLowerCase();
+  const loanEmail = (record.userEmail || "").trim().toLowerCase();
+  const loanName = (record.memberName || "").trim().toLowerCase();
+
+  return Boolean((userEmail && loanEmail === userEmail) || (userName && loanName === userName));
+}
+
+export function getLoanApplications({ includeAllSacco = false } = {}) {
   const records = readList(LOANS_KEY);
   const saccoId = getCurrentSaccoId();
+  const user = getCurrentUser();
+  const isChairperson = user.role === "chairperson";
 
   if (saccoId > 0) {
-    return records.filter((record) => Number(record.saccoId) === saccoId);
+    const saccoLoans = records.filter((record) => Number(record.saccoId) === saccoId);
+    if (includeAllSacco || isChairperson) return saccoLoans;
+    return saccoLoans.filter((record) => loanBelongsToUser(record, user));
   }
 
-  const user = getCurrentUser();
   if (user.email) {
     return records.filter((record) => record.userEmail === user.email);
   }
@@ -135,7 +147,25 @@ export function getLoanApplications() {
 }
 
 export function saveLoanApplications(records) {
-  window.localStorage.setItem(LOANS_KEY, JSON.stringify(records));
+  const saccoId = getCurrentSaccoId();
+  const user = getCurrentUser();
+  const isChairperson = user.role === "chairperson";
+  const incomingIds = new Set(records.map((record) => record.id));
+  const preservedRecords = readList(LOANS_KEY).filter((record) => {
+    if (incomingIds.has(record.id)) return false;
+
+    if (saccoId > 0) {
+      const inCurrentSacco = Number(record.saccoId) === saccoId;
+      if (!inCurrentSacco) return true;
+      if (isChairperson) return false;
+      return !loanBelongsToUser(record, user);
+    }
+
+    if (user.email) return record.userEmail !== user.email;
+    return true;
+  });
+
+  window.localStorage.setItem(LOANS_KEY, JSON.stringify([...records, ...preservedRecords]));
   window.dispatchEvent(new Event("digi-finance-updated"));
 }
 
@@ -153,7 +183,8 @@ export function addLoanApplication(record) {
 
 export function getFinanceSummary() {
   const transactions = getTransactions(); 
-  const loans = getLoanApplications();   
+  const currentUser = getCurrentUser();
+  const loans = getLoanApplications({ includeAllSacco: currentUser.role !== "member" });   
   const users = readList("digiUsers");
   const saccoId = getCurrentSaccoId();
   const memberNames = new Set();
@@ -184,22 +215,18 @@ export function getFinanceSummary() {
       if (transaction.type === "deposit") {
         summary.contributionPayments += amount;
         summary.pooledFund += amount;
-        if (transaction.userEmail === getCurrentUser().email) summary.personalContributions += amount;
+        if (transaction.userEmail === currentUser.email) summary.personalContributions += amount;
       }
 
       if (transaction.type === "checkoff") {
         summary.checkoffPayments += amount;
         summary.contributionPayments += amount;
         summary.pooledFund += amount;
-        if (transaction.userEmail === getCurrentUser().email) summary.personalContributions += amount;
+        if (transaction.userEmail === currentUser.email) summary.personalContributions += amount;
       }
 
       if (transaction.type === "withdrawal") {
         summary.withdrawals += amount;
-      }
-
-      if (transaction.type === "loan-repayment") {
-        summary.loanRepayments += amount;
       }
 
       return summary;
@@ -208,7 +235,7 @@ export function getFinanceSummary() {
       contributionPayments: 0,
       checkoffPayments: 0,
       withdrawals: 0,
-      loanRepayments: 0,
+      loanRepayments: loanRepaymentsFromLoans,
       activeMembers: memberNames.size,
       loanApplications: loans.length,
       loansApplied,

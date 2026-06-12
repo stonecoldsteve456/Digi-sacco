@@ -1,12 +1,23 @@
 import React from "react";
 import LiveEntityPage from "./LiveEntityPage";
 
-function Communication() {
+function Communication({ mode = "manage" }) {
+  const readOnly = mode === "read";
+
   return (
     <LiveEntityPage
-      title="Communication"
-      description="Create and review announcements sent to SACCO members."
+      title={readOnly ? "Announcements" : "Communication"}
+      description={
+        readOnly
+          ? "Review announcements sent by your SACCO officials."
+          : "Create and review announcements sent to SACCO members."
+      }
       endpoint="/communications"
+      className="communication-monitor-page"
+      tableTitle={readOnly ? "SACCO Announcements" : "Communication Records"}
+      tableClassName="data-table monitor-data-table"
+      actionLabel="Remove"
+      readOnly={readOnly}
       fields={[
         { name: "subject", label: "Subject", placeholder: "Annual meeting notice" },
         { name: "audience", label: "Audience", placeholder: "All members", defaultValue: "All members" },

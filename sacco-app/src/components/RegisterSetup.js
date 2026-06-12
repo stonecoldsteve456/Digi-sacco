@@ -72,7 +72,7 @@ function RegisterSetup({ setActivePage }) {
    const handleComplete = async () => {
      let saccoId = null;
      
-     // First, create the sacco via backend API
+    
      try {
        const saccoResponse = await fetch("http://localhost:5000/api/sacco", {
          method: "POST",

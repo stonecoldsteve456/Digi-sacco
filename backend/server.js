@@ -771,8 +771,10 @@ app.get("/api/dashboard/summary", async (req, res) => {
     const pool = getMainPool();
     const saccoId = parseSaccoId(req.query.saccoId);
     const email = (req.query.email || "").trim().toLowerCase();
+    const loanScope = (req.query.loanScope || "").trim().toLowerCase();
     const txScope = saccoId ? " AND sacco_id = ?" : "";
     const scopeValues = saccoId ? [saccoId] : [];
+    const showMemberLoanSummary = loanScope === "member" && email;
     
     const [depositRows] = await pool.execute(
       `SELECT IFNULL(SUM(amount),0) AS total FROM transactions WHERE type = 'deposit'${txScope} AND MONTH(created_at)=MONTH(CURRENT_DATE()) AND YEAR(created_at)=YEAR(CURRENT_DATE())`,
@@ -804,6 +806,15 @@ app.get("/api/dashboard/summary", async (req, res) => {
       `SELECT COUNT(*) AS count FROM loan_applications WHERE approval_status = 'Pending'${saccoId ? " AND sacco_id = ?" : ""}`,
       scopeValues
     );
+    const [loanRows] = await pool.execute(
+      `SELECT COUNT(*) AS count,
+              IFNULL(SUM(amount),0) AS amountTotal,
+              IFNULL(SUM(amount_paid),0) AS paidTotal
+         FROM loan_applications WHERE 1=1${saccoId ? " AND sacco_id = ?" : ""}${
+           showMemberLoanSummary ? " AND user_email = ?" : ""
+         }`,
+      [...scopeValues, ...(showMemberLoanSummary ? [email] : [])]
+    );
     const [saccoRows] = saccoId
       ? await pool.execute(
           `SELECT contribution_amount AS contributionAmount,
@@ -825,6 +836,13 @@ app.get("/api/dashboard/summary", async (req, res) => {
       activeMembers: Number(memberRows[0].count) || 0,
       pendingApprovals: Number(pendingRows[0].count) || 0,
       withdrawals: parseFloat(withdrawRows[0].total) || 0,
+      loanApplications: Number(loanRows[0].count) || 0,
+      loansApplied: parseFloat(loanRows[0].amountTotal) || 0,
+      loanRepayments: parseFloat(loanRows[0].paidTotal) || 0,
+      remainingLoanDebt: Math.max(
+        (parseFloat(loanRows[0].amountTotal) || 0) - (parseFloat(loanRows[0].paidTotal) || 0),
+        0
+      ),
     };
 
     return res.json(summary);
@@ -866,7 +884,9 @@ app.get("/api/loan-applications", async (req, res) => {
     if (saccoId) {
       where.push("sacco_id = ?");
       values.push(saccoId);
-    } else if (email) {
+    }
+
+    if (email) {
       where.push("user_email = ?");
       values.push(email);
     }
