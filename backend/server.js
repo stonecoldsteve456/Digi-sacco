@@ -855,58 +855,58 @@ app.get("/api/dashboard/summary", async (req, res) => {
     const showMemberLoanSummary = loanScope === "member" && email;
     const contributionScope = saccoId ? " AND tx.sacco_id = ?" : "";
     
-    const [depositRows] = await pool.execute(
-      `SELECT IFNULL(SUM(amount),0) AS total
-         FROM (
-           SELECT MAX(amount) AS amount
-             FROM transactions tx
-            WHERE type = 'deposit'${contributionScope}
-              AND MONTH(created_at)=MONTH(CURRENT_DATE())
-              AND YEAR(created_at)=YEAR(CURRENT_DATE())
-            GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, ''))), amount, DATE(created_at)
-         ) contribution_rows`,
-      scopeValues
-    );
-    const [checkoffRows] = await pool.execute(
-      `SELECT IFNULL(SUM(amount),0) AS total
-         FROM (
-           SELECT MAX(amount) AS amount
-             FROM transactions tx
-            WHERE type = 'checkoff'${contributionScope}
-              AND COALESCE(status, 'approved') = 'approved'
-              AND MONTH(created_at)=MONTH(CURRENT_DATE())
-              AND YEAR(created_at)=YEAR(CURRENT_DATE())
-            GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, ''))), amount, DATE(created_at)
-         ) contribution_rows`,
-      scopeValues
-    );
+     const [depositRows] = await pool.execute(
+       `SELECT IFNULL(SUM(amount),0) AS total
+          FROM (
+            SELECT MAX(amount) AS amount
+              FROM transactions tx
+             WHERE type = 'deposit'${contributionScope}
+               AND MONTH(created_at)=MONTH(CURRENT_DATE())
+               AND YEAR(created_at)=YEAR(CURRENT_DATE())
+             GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, '')))
+          ) contribution_rows`,
+       scopeValues
+     );
+     const [checkoffRows] = await pool.execute(
+       `SELECT IFNULL(SUM(amount),0) AS total
+          FROM (
+            SELECT MAX(amount) AS amount
+              FROM transactions tx
+             WHERE type = 'checkoff'${contributionScope}
+               AND COALESCE(status, 'approved') = 'approved'
+               AND MONTH(created_at)=MONTH(CURRENT_DATE())
+               AND YEAR(created_at)=YEAR(CURRENT_DATE())
+             GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, ''))), DATE(created_at)
+          ) contribution_rows`,
+       scopeValues
+     );
     const [withdrawRows] = await pool.execute(
       `SELECT IFNULL(SUM(amount),0) AS total FROM transactions WHERE type = 'withdrawal'${txScope} AND MONTH(created_at)=MONTH(CURRENT_DATE()) AND YEAR(created_at)=YEAR(CURRENT_DATE())`,
       scopeValues
     );
-    const [pooledRows] = await pool.execute(
-      `SELECT IFNULL(SUM(amount),0) AS total
-         FROM (
-           SELECT MAX(amount) AS amount
-             FROM transactions tx
-            WHERE type IN ('deposit', 'checkoff')${contributionScope}
-              AND (type <> 'checkoff' OR COALESCE(status, 'approved') = 'approved')
-            GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, ''))), amount, DATE(created_at)
-         ) contribution_rows`,
-      scopeValues
-    );
-    const [personalRows] = await pool.execute(
-      `SELECT IFNULL(SUM(amount),0) AS total
-         FROM (
-           SELECT MAX(amount) AS amount
-             FROM transactions tx
-            WHERE type IN ('deposit', 'checkoff')${contributionScope}
-              AND (type <> 'checkoff' OR COALESCE(status, 'approved') = 'approved')
-              ${email ? " AND user_email = ?" : ""}
-            GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, ''))), amount, DATE(created_at)
-         ) contribution_rows`,
-      [...scopeValues, ...(email ? [email] : [])]
-    );
+     const [pooledRows] = await pool.execute(
+       `SELECT IFNULL(SUM(amount),0) AS total
+          FROM (
+            SELECT MAX(amount) AS amount
+              FROM transactions tx
+             WHERE type IN ('deposit', 'checkoff')${contributionScope}
+               AND (type <> 'checkoff' OR COALESCE(status, 'approved') = 'approved')
+             GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, ''))), DATE(created_at)
+          ) contribution_rows`,
+       scopeValues
+     );
+     const [personalRows] = await pool.execute(
+       `SELECT IFNULL(SUM(amount),0) AS total
+          FROM (
+            SELECT MAX(amount) AS amount
+              FROM transactions tx
+             WHERE type IN ('deposit', 'checkoff')${contributionScope}
+               AND (type <> 'checkoff' OR COALESCE(status, 'approved') = 'approved')
+               ${email ? " AND user_email = ?" : ""}
+             GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, ''))), DATE(created_at)
+          ) contribution_rows`,
+       [...scopeValues, ...(email ? [email] : [])]
+     );
     const [memberRows] = await pool.execute(
       `SELECT COUNT(*) AS count FROM users ${saccoId ? "WHERE sacco_id = ?" : ""}`,
       scopeValues
