@@ -57,6 +57,26 @@ function normalizeChatMessages(messages) {
     .filter((message) => message.parts[0].text.trim());
 }
 
+function getRepaymentMonths(repaymentPeriod) {
+  const months = parseInt(repaymentPeriod, 10);
+  return Number.isFinite(months) && months > 0 ? months : 1;
+}
+
+function calculateTotalRepaymentAmount(principal, annualInterestRate, repaymentPeriod) {
+  const loanAmount = Number(principal) || 0;
+  const months = getRepaymentMonths(repaymentPeriod);
+  const monthlyRate = (Number(annualInterestRate) || 0) / 100 / 12;
+
+  if (loanAmount <= 0) return 0;
+  if (monthlyRate === 0) return Math.round(loanAmount * 100) / 100;
+
+  const monthlyPayment =
+    (loanAmount * monthlyRate * Math.pow(1 + monthlyRate, months)) /
+    (Math.pow(1 + monthlyRate, months) - 1);
+
+  return Math.round(monthlyPayment * months * 100) / 100;
+}
+
 async function createTables() {
   const pool = getMainPool();
 
@@ -87,11 +107,13 @@ async function createTables() {
       id_number VARCHAR(100) NOT NULL,
       email VARCHAR(150) NOT NULL UNIQUE,
       password_hash VARCHAR(255) NOT NULL,
+      role VARCHAR(40) NOT NULL DEFAULT 'member',
       sacco_id INT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (sacco_id) REFERENCES sacco(id) ON DELETE SET NULL
     ) ENGINE=InnoDB;
   `);
+  await ensureColumn(pool, "users", "role", "VARCHAR(40) NOT NULL DEFAULT 'member' AFTER password_hash");
   await ensureColumn(pool, "users", "sacco_id", "INT NULL AFTER password_hash");
 
   await pool.execute(`
@@ -196,10 +218,13 @@ async function createTables() {
       channel VARCHAR(60) NOT NULL,
       message TEXT NOT NULL,
       created_by VARCHAR(150),
+      target_user_id INT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_communication_sacco (sacco_id)
+      INDEX idx_communication_sacco (sacco_id),
+      INDEX idx_communication_target (target_user_id)
     ) ENGINE=InnoDB;
   `);
+  await ensureColumn(pool, "communications", "target_user_id", "INT NULL");
 
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS loan_types (
@@ -363,7 +388,7 @@ app.post("/api/chat", async (req, res) => {
 app.post("/api/auth/register", async (req, res) => {
   try {
     const pool = getMainPool();
-    const { name, idNumber, email, password } = req.body;
+    const { name, idNumber, email, password, role } = req.body;
     if (!name || !idNumber || !email || !password) {
       return res.status(400).json({ error: "All fields are required." });
     }
@@ -375,8 +400,8 @@ app.post("/api/auth/register", async (req, res) => {
 
     const passwordHash = Buffer.from(password).toString("base64");
     await pool.execute(
-      "INSERT INTO users (name, id_number, email, password_hash) VALUES (?, ?, ?, ?)",
-      [name.trim(), idNumber.trim(), email.trim().toLowerCase(), passwordHash]
+      "INSERT INTO users (name, id_number, email, password_hash, role) VALUES (?, ?, ?, ?, ?)",
+      [name.trim(), idNumber.trim(), email.trim().toLowerCase(), passwordHash, role || "member"]
     );
 
     return res.status(201).json({ message: "Registration successful." });
@@ -520,6 +545,7 @@ app.post("/api/auth/login", async (req, res) => {
     return res.json({
       email: user.email,
       name: user.name,
+      role: user.role || "member",
       saccoId: user.sacco_id,
       saccoName: user.sacco_name,
       message: "Login successful.",
@@ -642,8 +668,8 @@ const entityConfigs = {
   communications: {
     table: "communications",
     select:
-      "id, sacco_id AS saccoId, subject, audience, channel, message, created_by AS createdBy, created_at AS createdAt",
-    insertColumns: ["sacco_id", "subject", "audience", "channel", "message", "created_by"],
+      "id, sacco_id AS saccoId, subject, audience, channel, message, created_by AS createdBy, target_user_id AS targetUserId, created_at AS createdAt",
+    insertColumns: ["sacco_id", "subject", "audience", "channel", "message", "created_by", "target_user_id"],
     required: ["subject", "message"],
     map: (body) => [
       parseSaccoId(body.saccoId),
@@ -652,6 +678,7 @@ const entityConfigs = {
       body.channel || "Notice",
       body.message?.trim(),
       body.createdBy || "",
+      body.targetUserId || null,
     ],
   },
   "loan-types": {
@@ -675,20 +702,48 @@ app.get("/api/:entity", async (req, res, next) => {
   const config = entityConfigs[req.params.entity];
   if (!config) return next();
 
-  try {
-    const pool = getMainPool();
-    const saccoId = parseSaccoId(req.query.saccoId);
-    const [rows] = await pool.execute(
-      `SELECT ${config.select} FROM ${config.table} ${
-        saccoId ? "WHERE sacco_id = ? OR sacco_id IS NULL" : ""
-      } ORDER BY created_at DESC, id DESC`,
-      saccoId ? [saccoId] : []
-    );
-    return res.json(rows);
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: `Could not load ${req.params.entity}.` });
-  }
+   try {
+     const pool = getMainPool();
+     const saccoId = parseSaccoId(req.query.saccoId);
+
+     if (req.params.entity === "communications") {
+       const email = (req.query.email || "").trim().toLowerCase();
+       const where = [];
+       const values = [];
+
+       if (saccoId) {
+         where.push("(communications.sacco_id = ? OR communications.sacco_id IS NULL)");
+         values.push(saccoId);
+       }
+
+       if (email) {
+         where.push(
+           `(communications.target_user_id IS NULL OR communications.target_user_id = (
+             SELECT users.id FROM users WHERE users.email = ? LIMIT 1
+           ))`
+         );
+         values.push(email);
+       }
+
+       const [rows] = await pool.execute(
+         `SELECT ${config.select} FROM ${config.table} ${
+           where.length ? "WHERE " + where.join(" AND ") : ""
+         } ORDER BY created_at DESC, id DESC`,
+         values
+       );
+       return res.json(rows);
+     }
+     
+     // Default handling for all entities
+     const [rows] = await pool.execute(
+       `SELECT ${config.select} FROM ${config.table} ${saccoId ? "WHERE sacco_id = ? OR sacco_id IS NULL" : ""} ORDER BY created_at DESC, id DESC`,
+       saccoId ? [saccoId] : []
+     );
+     return res.json(rows);
+   } catch (error) {
+     console.error(error);
+     return res.status(500).json({ error: `Could not load ${req.params.entity}.` });
+   }
 });
 
 app.post("/api/:entity", async (req, res, next) => {
@@ -708,10 +763,10 @@ app.post("/api/:entity", async (req, res, next) => {
       config.map(req.body)
     );
     return res.status(201).json({ id: result.insertId, message: "Record added." });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: `Could not add ${req.params.entity}.` });
-  }
+   } catch (error) {
+     console.error(error);
+     return res.status(500).json({ error: `Could not add ${req.params.entity}.` });
+   }
 });
 
 app.delete("/api/:entity/:id", async (req, res, next) => {
@@ -726,6 +781,29 @@ app.delete("/api/:entity/:id", async (req, res, next) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: `Could not delete ${req.params.entity}.` });
+  }
+});
+
+app.get("/api/members", async (req, res) => {
+  try {
+    const pool = getMainPool();
+    const saccoId = parseSaccoId(req.query.saccoId);
+    const search = (req.query.search || "").trim();
+
+    if (!saccoId) {
+      return res.status(400).json({ error: "saccoId query parameter is required." });
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT id, sacco_id AS saccoId, name, id_number AS idNumber, email, role, created_at AS createdAt
+        FROM users WHERE sacco_id = ? ${search ? "AND (name LIKE ? OR id_number LIKE ? OR email LIKE ?)" : ""}
+        ORDER BY created_at DESC, id DESC`,
+      [...(search ? [saccoId, `%${search}%`, `%${search}%`, `%${search}%`] : [saccoId])]
+    );
+    return res.json(rows);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Could not load members." });
   }
 });
 
@@ -775,13 +853,31 @@ app.get("/api/dashboard/summary", async (req, res) => {
     const txScope = saccoId ? " AND sacco_id = ?" : "";
     const scopeValues = saccoId ? [saccoId] : [];
     const showMemberLoanSummary = loanScope === "member" && email;
+    const contributionScope = saccoId ? " AND tx.sacco_id = ?" : "";
     
     const [depositRows] = await pool.execute(
-      `SELECT IFNULL(SUM(amount),0) AS total FROM transactions WHERE type = 'deposit'${txScope} AND MONTH(created_at)=MONTH(CURRENT_DATE()) AND YEAR(created_at)=YEAR(CURRENT_DATE())`,
+      `SELECT IFNULL(SUM(amount),0) AS total
+         FROM (
+           SELECT MAX(amount) AS amount
+             FROM transactions tx
+            WHERE type = 'deposit'${contributionScope}
+              AND MONTH(created_at)=MONTH(CURRENT_DATE())
+              AND YEAR(created_at)=YEAR(CURRENT_DATE())
+            GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, ''))), amount, DATE(created_at)
+         ) contribution_rows`,
       scopeValues
     );
     const [checkoffRows] = await pool.execute(
-      `SELECT IFNULL(SUM(amount),0) AS total FROM transactions WHERE type = 'checkoff'${txScope} AND MONTH(created_at)=MONTH(CURRENT_DATE()) AND YEAR(created_at)=YEAR(CURRENT_DATE())`,
+      `SELECT IFNULL(SUM(amount),0) AS total
+         FROM (
+           SELECT MAX(amount) AS amount
+             FROM transactions tx
+            WHERE type = 'checkoff'${contributionScope}
+              AND COALESCE(status, 'approved') = 'approved'
+              AND MONTH(created_at)=MONTH(CURRENT_DATE())
+              AND YEAR(created_at)=YEAR(CURRENT_DATE())
+            GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, ''))), amount, DATE(created_at)
+         ) contribution_rows`,
       scopeValues
     );
     const [withdrawRows] = await pool.execute(
@@ -789,13 +885,26 @@ app.get("/api/dashboard/summary", async (req, res) => {
       scopeValues
     );
     const [pooledRows] = await pool.execute(
-      `SELECT IFNULL(SUM(amount),0) AS total FROM transactions WHERE type IN ('deposit', 'checkoff')${txScope}`,
+      `SELECT IFNULL(SUM(amount),0) AS total
+         FROM (
+           SELECT MAX(amount) AS amount
+             FROM transactions tx
+            WHERE type IN ('deposit', 'checkoff')${contributionScope}
+              AND (type <> 'checkoff' OR COALESCE(status, 'approved') = 'approved')
+            GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, ''))), amount, DATE(created_at)
+         ) contribution_rows`,
       scopeValues
     );
     const [personalRows] = await pool.execute(
-      `SELECT IFNULL(SUM(amount),0) AS total FROM transactions WHERE type IN ('deposit', 'checkoff')${
-        saccoId ? " AND sacco_id = ?" : ""
-      }${email ? " AND user_email = ?" : ""}`,
+      `SELECT IFNULL(SUM(amount),0) AS total
+         FROM (
+           SELECT MAX(amount) AS amount
+             FROM transactions tx
+            WHERE type IN ('deposit', 'checkoff')${contributionScope}
+              AND (type <> 'checkoff' OR COALESCE(status, 'approved') = 'approved')
+              ${email ? " AND user_email = ?" : ""}
+            GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, ''))), amount, DATE(created_at)
+         ) contribution_rows`,
       [...scopeValues, ...(email ? [email] : [])]
     );
     const [memberRows] = await pool.execute(
@@ -807,13 +916,31 @@ app.get("/api/dashboard/summary", async (req, res) => {
       scopeValues
     );
     const [loanRows] = await pool.execute(
-      `SELECT COUNT(*) AS count,
-              IFNULL(SUM(amount),0) AS amountTotal,
-              IFNULL(SUM(amount_paid),0) AS paidTotal
+      `SELECT amount,
+              interest_rate AS interestRate,
+              repayment_period AS repaymentPeriod,
+              total_repayment_amount AS totalRepaymentAmount,
+              amount_paid AS amountPaid
          FROM loan_applications WHERE 1=1${saccoId ? " AND sacco_id = ?" : ""}${
            showMemberLoanSummary ? " AND user_email = ?" : ""
          }`,
       [...scopeValues, ...(showMemberLoanSummary ? [email] : [])]
+    );
+    const loanTotals = loanRows.reduce(
+      (totals, loan) => {
+        const amount = parseFloat(loan.amount) || 0;
+        const totalRepayment =
+          parseFloat(loan.totalRepaymentAmount) ||
+          calculateTotalRepaymentAmount(amount, loan.interestRate, loan.repaymentPeriod);
+
+        return {
+          count: totals.count + 1,
+          amountTotal: totals.amountTotal + amount,
+          repaymentTotal: totals.repaymentTotal + totalRepayment,
+          paidTotal: totals.paidTotal + (parseFloat(loan.amountPaid) || 0),
+        };
+      },
+      { count: 0, amountTotal: 0, repaymentTotal: 0, paidTotal: 0 }
     );
     const [saccoRows] = saccoId
       ? await pool.execute(
@@ -836,11 +963,11 @@ app.get("/api/dashboard/summary", async (req, res) => {
       activeMembers: Number(memberRows[0].count) || 0,
       pendingApprovals: Number(pendingRows[0].count) || 0,
       withdrawals: parseFloat(withdrawRows[0].total) || 0,
-      loanApplications: Number(loanRows[0].count) || 0,
-      loansApplied: parseFloat(loanRows[0].amountTotal) || 0,
-      loanRepayments: parseFloat(loanRows[0].paidTotal) || 0,
+      loanApplications: loanTotals.count,
+      loansApplied: loanTotals.amountTotal,
+      loanRepayments: loanTotals.paidTotal,
       remainingLoanDebt: Math.max(
-        (parseFloat(loanRows[0].amountTotal) || 0) - (parseFloat(loanRows[0].paidTotal) || 0),
+        loanTotals.repaymentTotal - loanTotals.paidTotal,
         0
       ),
     };
@@ -907,6 +1034,9 @@ app.get("/api/loan-applications", async (req, res) => {
     return res.json(
       rows.map((row) => ({
         ...row,
+        totalRepaymentAmount:
+          Number(row.totalRepaymentAmount) ||
+          calculateTotalRepaymentAmount(row.amount, row.interestRate, row.repaymentPeriod),
         repayments: parseJsonField(row.repaymentsJson, []),
         repaymentSchedule: parseJsonField(row.repaymentScheduleJson, []),
         repaymentsJson: undefined,
@@ -928,6 +1058,10 @@ app.post("/api/loan-applications", async (req, res) => {
     }
 
     const id = loan.id || Date.now();
+    const totalRepaymentAmount =
+      Number(loan.totalRepaymentAmount) ||
+      calculateTotalRepaymentAmount(loan.amount, loan.interestRate, loan.repaymentPeriod);
+
     await pool.execute(
       `INSERT INTO loan_applications (
         id, sacco_id, user_email, loan_type, member_name, amount, purpose, repayment_period,
@@ -956,7 +1090,7 @@ app.post("/api/loan-applications", async (req, res) => {
         loan.nextDue || "In 30 days",
         JSON.stringify(loan.repayments || []),
         JSON.stringify(loan.repaymentSchedule || []),
-        Number(loan.totalRepaymentAmount) || 0,
+        totalRepaymentAmount,
       ]
     );
 
@@ -971,6 +1105,9 @@ app.put("/api/loan-applications/:id", async (req, res) => {
   try {
     const pool = getMainPool();
     const loan = req.body;
+    const totalRepaymentAmount =
+      Number(loan.totalRepaymentAmount) ||
+      calculateTotalRepaymentAmount(loan.amount, loan.interestRate, loan.repaymentPeriod);
     const [result] = await pool.execute(
       `UPDATE loan_applications SET
         status = ?, amount_paid = ?, approval_status = ?, approved_by = ?, approved_at = ?,
@@ -989,7 +1126,7 @@ app.put("/api/loan-applications/:id", async (req, res) => {
         loan.nextDue || null,
         JSON.stringify(loan.repayments || []),
         JSON.stringify(loan.repaymentSchedule || []),
-        Number(loan.totalRepaymentAmount) || 0,
+        totalRepaymentAmount,
         req.params.id,
       ]
     );
@@ -1098,14 +1235,14 @@ app.post("/api/sacco", async (req, res) => {
 app.put("/api/users/sacco", async (req, res) => {
   try {
     const pool = getMainPool();
-    const { email, saccoId } = req.body;
+    const { email, saccoId, role } = req.body;
     if (!email) {
       return res.status(400).json({ error: "Email is required." });
     }
     if (saccoId === undefined || saccoId === null) {
       await pool.execute(
-        "UPDATE users SET sacco_id = NULL WHERE email = ?",
-        [email.trim().toLowerCase()]
+        "UPDATE users SET sacco_id = NULL, role = ? WHERE email = ?",
+        [role || "member", email.trim().toLowerCase()]
       );
       return res.json({ message: "User removed from sacco." });
     }
@@ -1116,8 +1253,8 @@ app.put("/api/users/sacco", async (req, res) => {
     }
 
     await pool.execute(
-      "UPDATE users SET sacco_id = ? WHERE email = ?",
-      [saccoId, email.trim().toLowerCase()]
+      "UPDATE users SET sacco_id = ?, role = ? WHERE email = ?",
+      [saccoId, role || "member", email.trim().toLowerCase()]
     );
 
     return res.json({ message: "User sacco updated successfully." });

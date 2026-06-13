@@ -35,7 +35,8 @@ function Sidebar({ onSelect, activeView, userRole }) {
       "deposits", "withdrawals", "checkoffs"
     ],
     secretary: [
-      "summary", "membership", "roles", "communication"
+      "summary", "membership", "roles", "communication",
+      "transactions", "deposits", "withdrawals", "checkoffs", "loans"
     ],
     member: [ 
       "summary", "transactions", "deposits", "withdrawals", "checkoffs", "loans" 

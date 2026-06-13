@@ -126,7 +126,7 @@ function TransactionPage({ type, title, description, amountLabel, defaultDescrip
         {usesFixedContribution && (
           <p className="muted-copy">
             Fixed {contributionSettings.contributionFrequency || "Monthly"} contribution:{" "}
-            {formatKes(fixedContributionAmount)} for chairperson and members.
+            {formatKes(fixedContributionAmount)} for every SACCO member.
           </p>
         )}
         <p className="muted-copy">Personal contribution record: {formatKes(personalTotal)}</p>

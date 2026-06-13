@@ -49,10 +49,25 @@ const defaultLoanOptions = [
 ];
 
 function getLoanDisplayStatus(loan) {
-  if ((Number(loan.amountPaid) || 0) >= Number(loan.amount || 0)) return "Paid";
+  if ((Number(loan.amountPaid) || 0) >= getLoanTotalRepaymentAmount(loan)) return "Paid";
   if (loan.disbursementStatus === "Disbursed") return "Disbursed";
   if (loan.approvalStatus === "Approved") return "Approved";
   return loan.status || "Pending";
+}
+
+function getLoanTotalRepaymentAmount(loan) {
+  const storedTotal = Number(loan.totalRepaymentAmount) || 0;
+  if (storedTotal > 0) return storedTotal;
+
+  const scheduleTotal = (loan.repaymentSchedule || []).reduce(
+    (sum, installment) => sum + (Number(installment.amountDue) || 0),
+    0
+  );
+  return scheduleTotal > 0 ? scheduleTotal : Number(loan.amount) || 0;
+}
+
+function getLoanInterestAmount(loan) {
+  return Math.max(getLoanTotalRepaymentAmount(loan) - (Number(loan.amount) || 0), 0);
 }
 
 function loanBelongsToCurrentUser(loan, currentUser) {
@@ -180,13 +195,36 @@ function LoanTypes() {
     return schedule;
   };
 
+  const calculateLoanReturn = (principal, annualInterestRate, repaymentPeriodStr) => {
+    const loanAmount = Number(principal) || 0;
+    const schedule = calculateRepaymentSchedule(loanAmount, annualInterestRate, repaymentPeriodStr);
+    const totalRepaymentAmount = schedule.reduce(
+      (sum, installment) => sum + (Number(installment.amountDue) || 0),
+      0
+    );
+    const roundedTotal = Math.round(totalRepaymentAmount * 100) / 100;
+
+    return {
+      principal: loanAmount,
+      interestAmount: Math.max(Math.round((roundedTotal - loanAmount) * 100) / 100, 0),
+      totalRepaymentAmount: roundedTotal,
+      schedule,
+    };
+  };
+
+  const repaymentPreview = calculateLoanReturn(
+    formData.amount,
+    selectedLoan.interestRate,
+    selectedLoan.repaymentPeriod
+  );
+
   const handleSubmit = () => {
     if (!formData.memberName || !formData.amount || !formData.purpose) {
       alert("Please complete all fields before submitting.");
       return;
     }
 
-    const repaymentSchedule = calculateRepaymentSchedule(
+    const loanReturn = calculateLoanReturn(
       Number(formData.amount),
       selectedLoan.interestRate,
       selectedLoan.repaymentPeriod
@@ -199,6 +237,7 @@ function LoanTypes() {
       loanType: selectedLoan.name,
       memberName: formData.memberName,
       amount: Number(formData.amount),
+      interestAmount: loanReturn.interestAmount,
       purpose: formData.purpose,
       repaymentPeriod: formData.repaymentPeriod,
       interestRate: selectedLoan.interestRate,
@@ -213,8 +252,8 @@ function LoanTypes() {
       disbursementStatus: "Pending",
       disbursedAt: null,
       disbursedBy: null,
-      repaymentSchedule: repaymentSchedule,
-      totalRepaymentAmount: repaymentSchedule.reduce((sum, installment) => sum + installment.amountDue, 0),
+      repaymentSchedule: loanReturn.schedule,
+      totalRepaymentAmount: loanReturn.totalRepaymentAmount,
     };
 
     const savedRecord = addLoanApplication(record);
@@ -239,7 +278,8 @@ function LoanTypes() {
   const handleRepayment = (loan) => {
     const paymentAmount = Number(repayments[loan.id]) || 0;
     const currentPaid = Number(loan.amountPaid) || 0;
-    const balance = Math.max(Number(loan.amount) - currentPaid, 0);
+    const totalRepaymentAmount = getLoanTotalRepaymentAmount(loan);
+    const balance = Math.max(totalRepaymentAmount - currentPaid, 0);
 
     if (paymentAmount <= 0) {
       alert("Enter a repayment amount.");
@@ -280,9 +320,9 @@ function LoanTypes() {
         ...application,
         amountPaid: nextPaid,
         repayments: [repaymentRecord, ...(application.repayments || [])],
-        status: nextPaid >= Number(application.amount) ? "Paid" : application.status,
+        status: nextPaid >= getLoanTotalRepaymentAmount(application) ? "Paid" : application.status,
         repaymentSchedule: updatedSchedule,
-        nextDue: nextPaid >= Number(application.amount) ? "Cleared" : application.nextDue,
+        nextDue: nextPaid >= getLoanTotalRepaymentAmount(application) ? "Cleared" : application.nextDue,
       };
     });
 
@@ -433,6 +473,14 @@ function LoanTypes() {
                 <span>{selectedLoan.repaymentPeriod}</span>
               </div>
               <div>
+                <strong>Interest Amount</strong>
+                <span>{formatKes(repaymentPreview.interestAmount)}</span>
+              </div>
+              <div>
+                <strong>Total To Return</strong>
+                <span>{formatKes(repaymentPreview.totalRepaymentAmount)}</span>
+              </div>
+              <div>
                 <strong>Eligibility</strong>
                 <span>{selectedLoan.eligibility}</span>
               </div>
@@ -508,6 +556,8 @@ function LoanTypes() {
                       <th>Loan</th>
                       <th>Member</th>
                       <th>Amount</th>
+                      <th>Interest</th>
+                      <th>Total Return</th>
                       <th>Paid</th>
                       <th>Balance</th>
                       <th>Status</th>
@@ -521,13 +571,16 @@ function LoanTypes() {
                   <tbody>
                     {applications.map((app) => {
                       const amountPaid = Number(app.amountPaid) || 0;
-                      const balance = Math.max(Number(app.amount) - amountPaid, 0);
+                      const totalRepaymentAmount = getLoanTotalRepaymentAmount(app);
+                      const balance = Math.max(totalRepaymentAmount - amountPaid, 0);
 
                       return (
                         <tr key={app.id}>
                           <td>{app.loanType}</td>
                           <td>{app.memberName}</td>
                           <td>{formatKes(app.amount)}</td>
+                          <td>{formatKes(getLoanInterestAmount(app))}</td>
+                          <td>{formatKes(totalRepaymentAmount)}</td>
                           <td>{formatKes(amountPaid)}</td>
                           <td>{formatKes(balance)}</td>
                           <td>{getLoanDisplayStatus(app)}</td>

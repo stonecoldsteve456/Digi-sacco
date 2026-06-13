@@ -1824,12 +1824,12 @@ body {
 
 .loan-applications-table td:first-child,
 .loan-applications-table td:nth-child(2),
-.loan-applications-table td:nth-child(9) {
+.loan-applications-table td:nth-child(11) {
   white-space: normal;
 }
 
-.loan-applications-table th:nth-child(11),
-.loan-applications-table td:nth-child(11) {
+.loan-applications-table th:nth-child(13),
+.loan-applications-table td:nth-child(13) {
   min-width: 170px;
 }
 

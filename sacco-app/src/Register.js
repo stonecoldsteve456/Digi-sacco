@@ -128,7 +128,13 @@ function Register({ setActivePage }) {
     fetch("http://localhost:5000/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newUser.name, idNumber: newUser.idNumber, email: newUser.email, password }),
+      body: JSON.stringify({
+        name: newUser.name,
+        idNumber: newUser.idNumber,
+        email: newUser.email,
+        password,
+        role: newUser.role,
+      }),
     })
       .then((r) => r.json())
       .then((data) => {
@@ -140,7 +146,7 @@ function Register({ setActivePage }) {
           return fetch("http://localhost:5000/api/users/sacco", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: newUser.email, saccoId: sacco.id }),
+            body: JSON.stringify({ email: newUser.email, saccoId: sacco.id, role: newUser.role }),
           });
         }
         return null;
@@ -216,7 +222,7 @@ function Register({ setActivePage }) {
           </button>
           {linkedSacco && (
             <p className="form-success">
-              You will join {linkedSacco.name} as a member.
+              You will join {linkedSacco.name} as {selectedRole}.
             </p>
           )}
         </>

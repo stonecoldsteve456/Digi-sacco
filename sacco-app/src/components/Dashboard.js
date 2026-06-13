@@ -5,7 +5,6 @@ import {
   FiCreditCard,
   FiDownload,
   FiPieChart,
-  FiRefreshCw,
   FiTrendingUp,
   FiUser,
 } from "react-icons/fi";
@@ -36,6 +35,7 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
   const [searchText, setSearchText] = useState("");
   const [currentUser, setCurrentUser] = useState({
     name: "Member",
+    email: "",
     role: "member",
     saccoName: "Digi Sacco",
   });
@@ -58,9 +58,9 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
 
   const getMessageReadKey = useCallback(() => {
     const saccoId = getCurrentSaccoId() || "all";
-    const userKey = (currentUser.name || "member").trim().toLowerCase().replace(/\s+/g, "-");
+    const userKey = (currentUser.email || currentUser.name || "member").trim().toLowerCase().replace(/\s+/g, "-");
     return `${MESSAGE_READ_KEY_PREFIX}:${saccoId}:${userKey}`;
-  }, [currentUser.name]);
+  }, [currentUser.email, currentUser.name]);
 
   const getLastViewedMessagesAt = useCallback(
     () => Number(window.localStorage.getItem(getMessageReadKey()) || 0),
@@ -73,7 +73,11 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
   }, [getMessageReadKey]);
 
   const loadUnreadMessages = useCallback(() => {
-    apiRequest(withSacco("/communications"))
+    const messagePath = currentUser.email
+      ? `/communications?email=${encodeURIComponent(currentUser.email)}`
+      : "/communications";
+
+    apiRequest(withSacco(messagePath))
       .then((records) => {
         const lastViewedAt = getLastViewedMessagesAt();
         const unreadCount = (Array.isArray(records) ? records : []).filter((record) => {
@@ -83,7 +87,7 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
         setUnreadMessages(unreadCount);
       })
       .catch((err) => console.log("Failed to load message notifications:", err));
-  }, [getLastViewedMessagesAt]);
+  }, [currentUser.email, getLastViewedMessagesAt]);
 
   const openMessages = () => {
     setCurrentSection("communication");
@@ -106,6 +110,7 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
         const authData = JSON.parse(storedAuth);
         setCurrentUser({
           name: authData.name || "Member",
+          email: authData.email || "",
           role: authData.role || "member",
           saccoName: authData.saccoName || "Digi Sacco",
         });
@@ -228,9 +233,7 @@ function Dashboard({ setIsLoggedIn, setActivePage }) {
                   </span>
                 )}
               </button>
-              <button className="icon-btn" aria-label="Refresh dashboard">
-                <FiRefreshCw />
-              </button>
+             
               <button className="profile-btn" type="button">
                 <span className="avatar">{initials}</span>
                 <span>{formatRole(currentUser.role)}</span>

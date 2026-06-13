@@ -181,6 +181,22 @@ export function addLoanApplication(record) {
   return nextRecord;
 }
 
+function getContributionDedupKey(transaction) {
+  const dateKey = (transaction.createdAt || new Date().toISOString()).slice(0, 10);
+  const memberKey = (
+    transaction.userEmail ||
+    transaction.memberName ||
+    "unknown-member"
+  ).trim().toLowerCase();
+  return [
+    transaction.type,
+    Number(transaction.saccoId) || getCurrentSaccoId() || "all",
+    memberKey,
+    Number(transaction.amount) || 0,
+    dateKey,
+  ].join("|");
+}
+
 export function getFinanceSummary() {
   const transactions = getTransactions(); 
   const currentUser = getCurrentUser();
@@ -203,22 +219,37 @@ export function getFinanceSummary() {
   });
 
   const loansApplied = loans.reduce((total, loan) => total + (Number(loan.amount) || 0), 0);
+  const loanRepaymentTotal = loans.reduce(
+    (total, loan) => total + (Number(loan.totalRepaymentAmount) || Number(loan.amount) || 0),
+    0
+  );
   const loanRepaymentsFromLoans = loans.reduce(
     (total, loan) => total + (Number(loan.amountPaid) || 0),
     0
   );
 
+  const countedContributions = new Set();
+
   return transactions.reduce(
     (summary, transaction) => {
       const amount = Number(transaction.amount) || 0;
+      const contributionKey = CONTRIBUTION_TYPES.includes(transaction.type)
+        ? getContributionDedupKey(transaction)
+        : "";
+
+      if (contributionKey && countedContributions.has(contributionKey)) {
+        return summary;
+      }
 
       if (transaction.type === "deposit") {
+        countedContributions.add(contributionKey);
         summary.contributionPayments += amount;
         summary.pooledFund += amount;
         if (transaction.userEmail === currentUser.email) summary.personalContributions += amount;
       }
 
-      if (transaction.type === "checkoff") {
+      if (transaction.type === "checkoff" && (transaction.status || "approved") === "approved") {
+        countedContributions.add(contributionKey);
         summary.checkoffPayments += amount;
         summary.contributionPayments += amount;
         summary.pooledFund += amount;
@@ -239,11 +270,11 @@ export function getFinanceSummary() {
       activeMembers: memberNames.size,
       loanApplications: loans.length,
       loansApplied,
-      remainingLoanDebt: Math.max(loansApplied - loanRepaymentsFromLoans, 0),
+      remainingLoanDebt: Math.max(loanRepaymentTotal - loanRepaymentsFromLoans, 0),
       pooledFund: 0,
       personalContributions: 0,
       fixedContributionAmount: Number(settings.contributionAmount) || 0,
-      contributionFrequency: settings.contributionFrequency || "Monthly",
+contributionAmount: Number(settings.contributionAmount) || 20000,
       contributionDescription: settings.contributionDescription || "",
     }
   );

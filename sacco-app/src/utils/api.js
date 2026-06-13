@@ -19,7 +19,7 @@ export function getSessionPayload(extra = {}) {
 }
 
 export async function apiRequest(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${API_BASE}${withSacco(path)}`, {
     ...options,
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
   });

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { addTransaction, saveContributionSettings } from "../utils/financeStore";
+import { saveContributionSettings } from "../utils/financeStore";
 
 const steps = [
   "Sacco Setup",
@@ -144,17 +144,6 @@ function RegisterSetup({ setActivePage }) {
          });
        }
 
-       // Add transaction to local finance store (will include saccoId)
-       if (form.contributionAmount) {
-         addTransaction({
-           userEmail: registeredEmail,
-           memberName: registeredUser?.name || "Member",
-           type: "deposit",
-           amount: form.contributionAmount,
-           description: form.contributionDescription || "Initial contribution",
-         });
-       }
-
        // Also update user's sacco association in backend
        try {
          await fetch("http://localhost:5000/api/users/sacco", {
@@ -162,7 +151,8 @@ function RegisterSetup({ setActivePage }) {
            headers: { "Content-Type": "application/json" },
            body: JSON.stringify({
              email: registeredEmail,
-             saccoId: saccoId
+             saccoId: saccoId,
+             role,
            }),
          });
        } catch (backendError) {
@@ -190,6 +180,9 @@ function RegisterSetup({ setActivePage }) {
          headers: { "Content-Type": "application/json" },
          body: JSON.stringify({
            userEmail: registeredEmail,
+           memberName: JSON.parse(window.localStorage.getItem("digiUsers") || "[]").find(
+             (user) => user.email === registeredEmail
+           )?.name,
            type: "deposit",
            amount: form.contributionAmount,
            description: form.contributionDescription || "Initial contribution",
