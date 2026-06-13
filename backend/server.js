@@ -876,7 +876,7 @@ app.get("/api/dashboard/summary", async (req, res) => {
                AND COALESCE(status, 'approved') = 'approved'
                AND MONTH(created_at)=MONTH(CURRENT_DATE())
                AND YEAR(created_at)=YEAR(CURRENT_DATE())
-             GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, ''))), DATE(created_at)
+             GROUP BY type, LOWER(COALESCE(NULLIF(user_email, ''), NULLIF(member_name, '')))
           ) contribution_rows`,
        scopeValues
      );
